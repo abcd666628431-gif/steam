@@ -10,10 +10,6 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase SDK (Compat) -->
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-app-compat.js"></script>
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-auth-compat.js"></script>
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-firestore-compat.js"></script>
     <style>
         @import url('https://gs.jurieo.com/gemini/fonts-googleapis/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
         
@@ -63,19 +59,47 @@
         }
         .mode-locked .edit-only { display: none !important; }
 
-        /* 搜尋建議選單 */
         .search-suggestion-item:hover {
             background: rgba(34, 211, 238, 0.1);
+            color: #22d3ee;
+        }
+        .category-chip-active {
+            background: rgba(34, 211, 238, 0.2);
+            border-color: #22d3ee !important;
             color: #22d3ee;
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, query, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch } from "https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-firestore.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "",
+            authDomain: "cloud-714ce.firebaseapp.com",
+            projectId: "cloud-714ce",
+            storageBucket: "cloud-714ce.firebasestorage.app",
+            messagingSenderId: "793151737559",
+            appId: "1:793151737559:web:7e7def7c8012bc91542a92"
+        };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
+        const initialToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.firebaseServices = { auth, db, appId, initialToken, serverTimestamp, collection, doc, setDoc, getDoc, onSnapshot, query, addDoc, updateDoc, deleteDoc, writeBatch, signInWithCustomToken, signInAnonymously, onAuthStateChanged };
+    </script>
+
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
-        
-        // --- 靜態配置 ---
+        const { auth, db, appId, initialToken, serverTimestamp, collection, doc, setDoc, getDoc, onSnapshot, query, addDoc, updateDoc, deleteDoc, writeBatch, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.firebaseServices;
+
         const DEFAULT_STATUS_OPTIONS = [
             { id: 'unbought', label: '願望清單', color: 'text-white border-slate-500 bg-slate-700/30' },
             { id: 'bought', label: '已購買', color: 'text-cyan-300 border-cyan-500 bg-cyan-950/40' },
@@ -83,7 +107,6 @@
             { id: 'completed', label: '已完成', color: 'text-lime-300 border-lime-500 bg-lime-950/40' },
         ];
 
-        // --- 工具函數 ---
         const safeGetStorage = (key, fallback) => {
             try {
                 const item = localStorage.getItem(key);
@@ -111,6 +134,7 @@
                 img.src = dataUrl;
             });
         };
+
         const Icon = memo(({ name, className, onClick, title }) => (
             <span 
                 onClick={(e) => { if(onClick) { e.stopPropagation(); onClick(e); } }} 
@@ -120,28 +144,13 @@
                 <i data-lucide={name} className="w-full h-full"></i>
             </span>
         ));
+
         const formatDate = (ts) => { 
             if (!ts) return "LIVE"; 
-            const date = new Date(ts.toMillis()); 
+            const date = new Date(ts.toMillis ? ts.toMillis() : ts); 
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
-        // --- Firebase 配置 ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
-            authDomain: "cloud-714ce.firebaseapp.com",
-            projectId: "cloud-714ce",
-            storageBucket: "cloud-714ce.firebasestorage.app",
-            messagingSenderId: "793151737559",
-            appId: "1:793151737559:web:7e7def7c8012bc91542a92"
-        };
-
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
-
-        // --- 子組件：GameRow (性能優化版) ---
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
             personnel, nameColorMap, currencies,
@@ -188,6 +197,9 @@
                                 <div className="flex items-center gap-2">
                                     <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
                                     {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {g.category && <span className="text-[10px] bg-cyan-900/30 text-cyan-400 border border-cyan-500/20 px-1.5 py-0.5 rounded font-bold uppercase">{g.category}</span>}
                                 </div>
                                 {!isEditLocked && (
                                     <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -266,7 +278,6 @@
             );
         });
 
-        // --- 主應用組件 ---
         function App() {
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
@@ -282,7 +293,7 @@
             const [allUserStatuses, setAllUserStatuses] = useState([]); 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingId, setEditingId] = useState(null); 
-            const [formData, setFormData] = useState({ name: '', addedBy: '', price: '', currency: 'HK$', url: '', cover: null, parentId: '' });
+            const [formData, setFormData] = useState({ name: '', addedBy: '', price: '', currency: 'HK$', url: '', cover: null, parentId: '', category: '' });
             const [notification, setNotification] = useState(null);
             const [searchQuery, setSearchQuery] = useState(''); 
             const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
@@ -291,13 +302,17 @@
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
             
-            // 預設為空清單
             const [statsMembers, setStatsMembers] = useState(safeGetStorage(`steam_stats_members_${appId}`, []));
             const [newMemberName, setNewMemberName] = useState('');
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [currencies, setCurrencies] = useState(safeGetStorage(`steam_currencies_${appId}`, ["HK$", "NT$", "US$", "JP¥", "CN¥"]));
             const [newCurrencyInput, setNewCurrencyInput] = useState('');
+
+            // 新增分類相關狀態
+            const [categories, setCategories] = useState(safeGetStorage(`steam_categories_${appId}`, ["動作", "冒險", "RPG", "策略", "獨立"]));
+            const [newCategoryInput, setNewCategoryInput] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState(null);
             
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -313,7 +328,6 @@
 
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
-            // 提取表格中有的 ID
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -321,12 +335,10 @@
                 return Array.from(names).filter(Boolean).sort();
             }, [allUserStatuses, games]);
 
-            // 添加人員下拉選單 (嚴格根據表格 ID + 手動輸入選項)
             const allAvailableMembers = useMemo(() => {
                 return [...tableMemberNames];
             }, [tableMemberNames]);
 
-            // 成員統計看板 (嚴格根據表格 ID)
             const allMembersStats = useMemo(() => {
                 const nameColorMapInternal = {};
                 onlineUsers.forEach(u => nameColorMapInternal[u.name] = u.color);
@@ -345,58 +357,75 @@
                 });
             }, [tableMemberNames, allUserStatuses, onlineUsers, userName, userColor]);
 
+            // 分類統計
+            const allCategoryStats = useMemo(() => {
+                const statsMap = {};
+                categories.forEach(cat => statsMap[cat] = 0);
+                games.forEach(g => {
+                    if (g.category && statsMap[g.category] !== undefined) statsMap[g.category]++;
+                });
+                return categories.map(cat => ({ name: cat, count: statsMap[cat] }));
+            }, [categories, games]);
+
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, isEditLocked, showSearchSuggestions, newPersonnelInput.gameId]);
+            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, categories.length, isEditLocked, showSearchSuggestions, newPersonnelInput.gameId, selectedCategory]);
 
             useEffect(() => {
                 const initAuth = async () => {
                     try {
-                        await auth.signInAnonymously();
+                        if (initialToken) {
+                            await signInWithCustomToken(auth, initialToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
                     } catch (e) {}
                 };
                 initAuth();
-                const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
+                const unsubAuth = onAuthStateChanged(auth, u => setUser(u));
                 return () => unsubAuth();
             }, []);
 
             useEffect(() => {
-                const updatePresence = () => {
-                    if (user) {
-                        db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                    }
-                };
-                updatePresence();
-                const heartbeat = setInterval(updatePresence, 30000);
+                if (!user) return;
                 
-                const unsubPresence = db.collection(paths.presence).onSnapshot(snap => {
+                setDoc(doc(db, paths.presence, user.uid), { uid: user.uid, name: userName, color: userColor, lastSeen: serverTimestamp() }, { merge: true });
+                const heartbeat = setInterval(() => {
+                    setDoc(doc(db, paths.presence, user.uid), { lastSeen: serverTimestamp() }, { merge: true });
+                }, 30000);
+                
+                const unsubPresence = onSnapshot(collection(db, paths.presence), (snap) => {
                     const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                    snap.forEach(d => { const data = d.data(); if (data.lastSeen && (now - data.lastSeen.toMillis() < 300000)) list.push(data); });
                     setOnlineUsers(list);
                 });
 
-                const unsubLogs = db.collection(paths.logs).onSnapshot(snap => {
-                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                const unsubLogs = onSnapshot(collection(db, paths.logs), (snap) => {
+                    const logs = []; snap.forEach(d => logs.push({ id: d.id, ...d.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                     setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
                 });
 
-                const unsubGames = db.collection(paths.games).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                const unsubGames = onSnapshot(collection(db, paths.games), (snap) => {
+                    const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }));
                     setGames(data); setIsLoadingGames(false);
                 });
 
-                const unsubStatuses = db.collection(paths.statuses).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                const unsubStatuses = onSnapshot(collection(db, paths.statuses), (snap) => {
+                    const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }));
                     setAllUserStatuses(data);
                 });
 
-                const unsubSettings = db.collection(paths.settings).doc('global').onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
+                const unsubSettings = onSnapshot(doc(db, paths.settings, 'global'), (d) => {
+                    if (d.exists()) {
+                        const data = d.data();
                         if (data.currencies) {
                             setCurrencies(data.currencies);
                             safeSetStorage(`steam_currencies_${appId}`, data.currencies);
+                        }
+                        if (data.categories) {
+                            setCategories(data.categories);
+                            safeSetStorage(`steam_categories_${appId}`, data.categories);
                         }
                     }
                 });
@@ -430,16 +459,6 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
-            useEffect(() => {
-                const handleClickOutside = (e) => {
-                    if (searchRef.current && !searchRef.current.contains(e.target)) {
-                        setShowSearchSuggestions(false);
-                    }
-                };
-                document.addEventListener('mousedown', handleClickOutside);
-                return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, []);
-
             const nameColorMap = useMemo(() => {
                 const map = {};
                 onlineUsers.forEach(u => map[u.name] = u.color);
@@ -462,10 +481,17 @@
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
+                
+                // 優先處理分類篩選
+                if (selectedCategory) {
+                    list = list.filter(g => g.category === selectedCategory || (g.parentId && games.find(p => p.id === g.parentId)?.category === selectedCategory));
+                }
+
                 if (searchQuery.trim()) {
                     const q = searchQuery.toLowerCase();
                     list = list.filter(g => (g.name || "").toLowerCase().includes(q));
                 }
+                
                 list.sort((a, b) => {
                     let valA = a[sortConfig.key]; let valB = b[sortConfig.key];
                     if (sortConfig.key === 'order') { 
@@ -477,11 +503,12 @@
                     if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                     return (a.id < b.id) ? -1 : 1;
                 });
+                
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
                 list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
                 return { roots, children };
-            }, [games, searchQuery, sortConfig]);
+            }, [games, searchQuery, sortConfig, selectedCategory]);
 
             const renormalizeLayer = async (parentId = "") => {
                 const siblings = games.filter(g => (g.parentId || "") === parentId);
@@ -491,12 +518,12 @@
                     if (ordA !== ordB) return ordA - ordB;
                     return (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0);
                 });
-                const batch = db.batch();
+                const batch = writeBatch(db);
                 let changes = 0;
                 sorted.forEach((g, idx) => {
                     const targetOrder = idx + 1;
                     if (parseInt(g.order) !== targetOrder) {
-                        batch.update(db.collection(paths.games).doc(g.id), { order: targetOrder });
+                        batch.update(doc(db, paths.games, g.id), { order: targetOrder });
                         changes++;
                     }
                 });
@@ -512,25 +539,7 @@
                 } catch (e) { showNotify("重排失敗"); }
             };
 
-            const logActivity = useCallback((action, gameName) => { if(db && user) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); }, [userName, user, paths]);
-
-            const handleAddStatsMember = useCallback(() => {
-                const name = newMemberName.trim();
-                if (name && !statsMembers.includes(name)) { 
-                    const next = [...statsMembers, name];
-                    setStatsMembers(next); 
-                    safeSetStorage(`steam_stats_members_${appId}`, next);
-                    setNewMemberName(''); 
-                }
-            }, [newMemberName, statsMembers]);
-
-            const handleRemoveStatsMember = useCallback((name) => {
-                if(confirm(`確定移除本地預置成員 ${name} 嗎？`)) { 
-                    const next = statsMembers.filter(m => m !== name);
-                    setStatsMembers(next); 
-                    safeSetStorage(`steam_stats_members_${appId}`, next);
-                }
-            }, [statsMembers]);
+            const logActivity = useCallback((action, gameName) => { if(user) addDoc(collection(db, paths.logs), { userName, action, gameName, timestamp: serverTimestamp() }); }, [userName, user, paths]);
 
             const handleAddCurrency = useCallback(async () => {
                 const cur = newCurrencyInput.trim().toUpperCase();
@@ -538,7 +547,7 @@
                     const next = [...currencies, cur];
                     setCurrencies(next);
                     setNewCurrencyInput('');
-                    await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
+                    await setDoc(doc(db, paths.settings, 'global'), { currencies: next }, { merge: true });
                 }
             }, [newCurrencyInput, currencies, paths]);
 
@@ -546,15 +555,41 @@
                 if (currencies.length <= 1) return;
                 const next = currencies.filter(c => c !== cur);
                 setCurrencies(next);
-                await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
+                await setDoc(doc(db, paths.settings, 'global'), { currencies: next }, { merge: true });
             }, [currencies, paths]);
 
+            // 分類增刪改
+            const handleAddCategory = useCallback(async () => {
+                const cat = newCategoryInput.trim();
+                if (cat && !categories.includes(cat)) {
+                    const next = [...categories, cat];
+                    setCategories(next);
+                    setNewCategoryInput('');
+                    await setDoc(doc(db, paths.settings, 'global'), { categories: next }, { merge: true });
+                }
+            }, [newCategoryInput, categories, paths]);
+
+            const handleRemoveCategory = useCallback(async (cat) => {
+                if (categories.length <= 1) return;
+                if (!confirm(`確定刪除分類「${cat}」嗎？不會影響現有遊戲數據，但將無法篩選該分類。`)) return;
+                const next = categories.filter(c => c !== cat);
+                setCategories(next);
+                await setDoc(doc(db, paths.settings, 'global'), { categories: next }, { merge: true });
+            }, [categories, paths]);
+
+            const handleUpdateCategoryName = useCallback(async (oldName, newName) => {
+                if (!newName.trim() || oldName === newName) return;
+                const next = categories.map(c => c === oldName ? newName : c);
+                setCategories(next);
+                await setDoc(doc(db, paths.settings, 'global'), { categories: next }, { merge: true });
+            }, [categories, paths]);
+
             const handleExportData = useCallback(() => {
-                const data = { version: "2.95", appId, games, userStatuses: allUserStatuses, statsMembers, currencies };
+                const data = { version: "5.01", appId, games, userStatuses: allUserStatuses, statsMembers, currencies, categories };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
                 showNotify("數據備份已導出");
-            }, [games, allUserStatuses, statsMembers, currencies, showNotify]);
+            }, [games, allUserStatuses, statsMembers, currencies, categories, showNotify]);
 
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -562,16 +597,15 @@
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        if (data.games) { for (const g of data.games) { const { id, ...gd } = g; await db.collection(paths.games).doc(id).set(gd, { merge: true }); } }
-                        if (data.statsMembers) { setStatsMembers(data.statsMembers); safeSetStorage(`steam_stats_members_${appId}`, data.statsMembers); }
-                        if (data.currencies) { setCurrencies(data.currencies); await db.collection(paths.settings).doc('global').set({ currencies: data.currencies }, { merge: true }); }
+                        if (data.games) { for (const g of data.games) { const { id, ...gd } = g; await setDoc(doc(db, paths.games, id), gd, { merge: true }); } }
+                        if (data.categories) { setCategories(data.categories); await setDoc(doc(db, paths.settings, 'global'), { categories: data.categories }, { merge: true }); }
                         showNotify("導入成功");
                     } catch (err) { showNotify("導入失敗"); }
                 };
                 reader.readAsText(file);
             }, [paths, showNotify]);
 
-            const closeModal = useCallback(() => { setFormData({ name: '', addedBy: '', price: '', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); }, [currencies]);
+            const closeModal = useCallback(() => { setFormData({ name: '', addedBy: '', price: '', currency: currencies[0], url: '', cover: null, parentId: '', category: '' }); setEditingId(null); setIsModalOpen(false); }, [currencies]);
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -579,12 +613,12 @@
                 try {
                     const finalData = { ...formData, addedBy: formData.addedBy || userName };
                     if (editingId) { 
-                        await db.collection(paths.games).doc(editingId).update(finalData); 
+                        await updateDoc(doc(db, paths.games, editingId), finalData); 
                         logActivity("修改數據", finalData.name); 
                     } else { 
                         const siblings = games.filter(g => (g.parentId || "") === (formData.parentId || ""));
                         const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
-                        await db.collection(paths.games).add({ ...finalData, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
+                        await addDoc(collection(db, paths.games), { ...finalData, order: nextOrder, createdAt: serverTimestamp() }); 
                         logActivity("錄入數據", finalData.name); 
                     }
                     showNotify("同步成功");
@@ -596,14 +630,14 @@
                 if (isEditLocked) return;
                 const newOrder = parseInt(newOrderStr); if (isNaN(newOrder) || newOrder < 1) return;
                 try {
-                    const batch = db.batch();
+                    const batch = writeBatch(db);
                     const targetGame = games.find(g => g.id === gameId);
                     if (!targetGame) return;
                     const siblings = games.filter(g => (g.parentId || "") === (targetGame.parentId || "") && g.id !== gameId);
-                    batch.update(db.collection(paths.games).doc(gameId), { order: newOrder });
+                    batch.update(doc(db, paths.games, gameId), { order: newOrder });
                     siblings.forEach(g => {
                         if (parseInt(g.order) >= newOrder) {
-                            batch.update(db.collection(paths.games).doc(g.id), { order: parseInt(g.order) + 1 });
+                            batch.update(doc(db, paths.games, g.id), { order: parseInt(g.order) + 1 });
                         }
                     });
                     await batch.commit(); 
@@ -615,7 +649,7 @@
                 if (!user) return;
                 const docId = `${gameId}_${targetUserId}`;
                 if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
-                await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
+                await setDoc(doc(db, paths.statuses, docId), { gameId, userId: targetUserId, timestamp: serverTimestamp(), ...updates }, { merge: true });
             }, [user, userColor, userName, paths]);
 
             const handleAddPersonnel = useCallback(async (gameId) => {
@@ -632,7 +666,7 @@
                     const child = games.find(g => g.id === childId);
                     const oldParentId = child ? (child.parentId || "") : "";
                     const newSiblings = games.filter(g => (g.parentId || "") === parentId);
-                    await db.collection(paths.games).doc(childId).update({ parentId, order: newSiblings.length + 1 });
+                    await updateDoc(doc(db, paths.games, childId), { parentId, order: newSiblings.length + 1 });
                     await renormalizeLayer(oldParentId); 
                     showNotify("已移至分組並補號");
                 } catch (e) { showNotify("分組失敗"); }
@@ -644,7 +678,7 @@
                     const item = games.find(g => g.id === gameId);
                     const oldParentId = item ? (item.parentId || "") : "";
                     const rootItems = games.filter(g => !g.parentId);
-                    await db.collection(paths.games).doc(gameId).update({ parentId: "", order: rootItems.length + 1 });
+                    await updateDoc(doc(db, paths.games, gameId), { parentId: "", order: rootItems.length + 1 });
                     await renormalizeLayer(oldParentId);
                     showNotify("已移至根目錄並補號");
                 } catch (e) { showNotify("移出失敗"); }
@@ -654,7 +688,7 @@
                 if (!user || !confirm(`確定刪除 ${game.name}？`)) return;
                 try {
                     const pId = game.parentId || "";
-                    await db.collection(paths.games).doc(game.id).delete();
+                    await deleteDoc(doc(db, paths.games, game.id));
                     setTimeout(() => renormalizeLayer(pId), 500); 
                     logActivity("刪除數據", game.name);
                     showNotify("已刪除並正在補號");
@@ -663,7 +697,7 @@
 
             const handleRemovePersonnel = useCallback(async (docId, name) => {
                 if (!user || !confirm(`確定移除玩家 ${name} 嗎？`)) return;
-                await db.collection(paths.statuses).doc(docId).delete();
+                await deleteDoc(doc(db, paths.statuses, docId));
                 showNotify(`已移除人員 ${name}`);
             }, [user, paths, showNotify]);
 
@@ -677,8 +711,8 @@
                 const newGames = [...rootList];
                 const [removed] = newGames.splice(draggedIdx, 1);
                 newGames.splice(targetIdx, 0, removed);
-                const batch = db.batch();
-                newGames.forEach((g, idx) => batch.update(db.collection(paths.games).doc(g.id), { order: idx + 1 }));
+                const batch = writeBatch(db);
+                newGames.forEach((g, idx) => batch.update(doc(db, paths.games, g.id), { order: idx + 1 }));
                 await batch.commit(); setDraggedIdx(null); setDraggedId(null);
             }, [draggedIdx, hierarchy.roots, paths]);
 
@@ -691,7 +725,8 @@
                     currency: g.currency||currencies[0], 
                     url: g.url||'', 
                     cover: g.cover||null, 
-                    parentId: g.parentId||'' 
+                    parentId: g.parentId||'',
+                    category: g.category||''
                 }); 
                 setIsModalOpen(true); 
             }, [currencies]);
@@ -708,7 +743,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v4.99</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.01</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -754,36 +789,79 @@
                             <div className="lg:col-span-4 bg-[#0d1117]/80 p-4 h-[180px] border border-white/10 relative flex flex-col rounded shadow-2xl">
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400"></div>
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                                    <div className="flex items-center gap-2"><span>成員統計 (基於表格數據)</span>
+                                    <div className="flex items-center gap-2"><span>成員統計</span>
                                         <Icon name="download" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={handleExportData} />
                                         <Icon name="upload" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => importInputRef.current.click()} />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
+                                    <div className="flex items-center gap-4">
+                                        <button 
+                                            onClick={() => setSelectedCategory(null)}
+                                            className={`text-[9px] px-2 py-0.5 rounded border transition-all ${!selectedCategory ? 'bg-cyan-500 text-black border-cyan-400' : 'border-slate-700 text-slate-500 hover:text-white'}`}
+                                        >全部顯示</button>
+                                    </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                                    {/* 新增分類看板 */}
+                                    <div className="mb-4">
+                                        <div className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-tighter">分類篩選 (點擊篩選表格)</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {allCategoryStats.map(cat => (
+                                                <div 
+                                                    key={cat.name} 
+                                                    onClick={() => setSelectedCategory(selectedCategory === cat.name ? null : cat.name)}
+                                                    className={`px-2 py-1 rounded border border-white/5 text-[11px] font-black cursor-pointer transition-all hover:bg-white/5 flex items-center gap-1.5 ${selectedCategory === cat.name ? 'category-chip-active' : 'bg-black/20 text-slate-400'}`}
+                                                >
+                                                    {cat.name} <span className="opacity-40">{cat.count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     <table className="w-full text-[15px] font-black border-collapse mb-4">
                                         <tbody>
                                             {allMembersStats.map(m => (
-                                                <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors"><td className="py-1" style={{ color: m.color }}>{m.name}</td><td className="text-slate-500">願望 {m.stats.unbought}</td><td className="text-cyan-600">已購 {m.stats.bought}</td><td className="text-fuchsia-600">遊玩 {m.stats.playing}</td><td className="w-4"><Icon name="x" className="w-3 h-3 text-red-900 opacity-0 group-hover:opacity-100 cursor-pointer" onClick={() => handleRemoveStatsMember(m.name)} /></td></tr>
+                                                <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors"><td className="py-1" style={{ color: m.color }}>{m.name}</td><td className="text-slate-500">願望 {m.stats.unbought}</td><td className="text-cyan-600">已購 {m.stats.bought}</td><td className="text-fuchsia-600">遊玩 {m.stats.playing}</td></tr>
                                             ))}
                                         </tbody>
                                     </table>
-                                    {allMembersStats.length === 0 && <div className="text-center py-6 text-slate-700 text-xs tracking-widest italic uppercase">Waiting for Data...</div>}
                                     
-                                    <div className="border-t border-white/10 pt-2 edit-only">
-                                        <div className="flex items-center justify-between mb-1 text-[10px] font-black text-slate-500">
-                                            <span>貨幣管理</span>
-                                            <div className="flex items-center gap-1">
-                                                <input type="text" maxLength="4" placeholder="+ 單位" className="bg-black/50 border-b border-cyan-900 text-[9px] px-1 w-12 outline-none" value={newCurrencyInput} onChange={e => setNewCurrencyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCurrency()} />
-                                                <Icon name="plus" className="w-3 h-3 cursor-pointer text-cyan-500" onClick={handleAddCurrency} />
+                                    <div className="border-t border-white/10 pt-2 edit-only space-y-4">
+                                        {/* 分類管理 */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                <span>分類管理</span>
+                                                <div className="flex items-center gap-1">
+                                                    <input type="text" placeholder="+ 分類" className="bg-black/50 border-b border-cyan-900 text-[9px] px-1 w-16 outline-none" value={newCategoryInput} onChange={e => setNewCategoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCategory()} />
+                                                    <Icon name="plus" className="w-3 h-3 cursor-pointer text-cyan-500" onClick={handleAddCategory} />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {categories.map(cat => (
+                                                    <div key={cat} className="flex items-center gap-1 bg-slate-900 border border-white/5 px-2 py-0.5 rounded text-[9px] font-black group/cat">
+                                                        <span onBlur={(e) => handleUpdateCategoryName(cat, e.target.innerText)} contentEditable suppressContentEditableWarning className="outline-none focus:text-cyan-400">{cat}</span>
+                                                        <Icon name="x" className="w-2.5 h-2.5 text-red-500 hidden group-hover/cat:inline cursor-pointer" onClick={() => handleRemoveCategory(cat)} />
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-1">
-                                            {currencies.map(cur => (
-                                                <span key={cur} className="flex items-center gap-1 bg-slate-900 border border-white/5 px-2 py-0.5 rounded text-[9px] font-black group/cur">
-                                                    {cur} <Icon name="x" className="w-2.5 h-2.5 text-red-500 hidden group-hover/cur:inline cursor-pointer" onClick={() => handleRemoveCurrency(cur)} />
-                                                </span>
-                                            ))}
+
+                                        {/* 貨幣管理 */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                <span>貨幣管理</span>
+                                                <div className="flex items-center gap-1">
+                                                    <input type="text" maxLength="4" placeholder="+ 單位" className="bg-black/50 border-b border-cyan-900 text-[9px] px-1 w-12 outline-none" value={newCurrencyInput} onChange={e => setNewCurrencyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCurrency()} />
+                                                    <Icon name="plus" className="w-3 h-3 cursor-pointer text-cyan-500" onClick={handleAddCurrency} />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {currencies.map(cur => (
+                                                    <span key={cur} className="flex items-center gap-1 bg-slate-900 border border-white/5 px-2 py-0.5 rounded text-[9px] font-black group/cur">
+                                                        {cur} <Icon name="x" className="w-2.5 h-2.5 text-red-500 hidden group-hover/cur:inline cursor-pointer" onClick={() => handleRemoveCurrency(cur)} />
+                                                    </span>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -791,13 +869,13 @@
                         </div>
                         <div className="mb-24 shadow-2xl rounded overflow-hidden">
                             <div className="flex items-stretch bg-slate-900 border-x border-t border-slate-700">
-                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0]}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
+                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0], category: categories[0] || ''}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
                                 
                                 <div className="flex-grow flex items-center px-6 relative" ref={searchRef}>
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
                                     <input 
                                         type="text" 
-                                        placeholder="搜尋遊戲名稱..." 
+                                        placeholder={selectedCategory ? `在「${selectedCategory}」中搜尋...` : "搜尋遊戲名稱..."}
                                         className="w-full bg-transparent outline-none uppercase font-black tracking-widest text-base" 
                                         value={searchQuery} 
                                         onFocus={() => setShowSearchSuggestions(true)}
@@ -858,7 +936,7 @@
                                                         personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap}
                                                         onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
                                                         onStartDrag={(id, idx) => { setDraggedId(id); setDraggedIdx(idx); }} onDrop={onDropReorder} onUpdateOrder={handleUpdateOrder}
-                                                        onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0]}); setEditingId(null); setIsModalOpen(true);}}
+                                                        onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0], category: g.category}); setEditingId(null); setIsModalOpen(true);}}
                                                         onNest={(id)=>handleNestGame(draggedId, id)}
                                                         onUnnest={handleUnnestGame} 
                                                         onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})}
@@ -887,6 +965,7 @@
                             </div>
                         </div>
                     </div>
+                    
                     {/* 修改/錄入彈窗 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm animate-in fade-in">
@@ -918,7 +997,16 @@
                                                 onChange={e=>setFormData({...formData, name: e.target.value})} 
                                             />
                                         </div>
-                                        <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">商店連結 (URL)</label><input className="w-full bg-transparent border-b border-slate-800 p-2 text-sm font-mono outline-none focus:border-cyan-400 transition-all" value={formData.url} onChange={e=>setFormData({...formData, url: e.target.value})} placeholder="https://store.steampowered.com/app/..." /></div>
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div className="w-full">
+                                                <label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">所屬分類</label>
+                                                <select className="w-full bg-black border-b border-slate-800 p-2 text-sm font-black outline-none focus:border-cyan-400 appearance-none" value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})}>
+                                                    <option value="">未分類</option>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">商店連結 (URL)</label><input className="w-full bg-transparent border-b border-slate-800 p-2 text-sm font-mono outline-none focus:border-cyan-400 transition-all" value={formData.url} onChange={e=>setFormData({...formData, url: e.target.value})} placeholder="URL..." /></div>
+                                        </div>
                                         <div className="grid grid-cols-2 gap-6">
                                             <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">貨幣單位</label>
                                                 <select className="w-full bg-black border-b border-slate-800 p-2 font-black outline-none focus:border-cyan-400" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>
@@ -964,7 +1052,6 @@
                                         if (newPersonnelInput.name && newPersonnelInput.name !== "_manual_") {
                                             handleAddPersonnel(newPersonnelInput.gameId);
                                         } else if (newPersonnelInput.name === "_manual_") {
-                                            // 提示輸入
                                             showNotify("請輸入名稱");
                                         }
                                     }} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded transition-colors hover:bg-indigo-500">確認添加</button>
@@ -975,6 +1062,7 @@
                 </div>
             );
         }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
