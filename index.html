@@ -77,24 +77,6 @@
             color: #22d3ee !important;
             border-color: rgba(34, 211, 238, 0.5) !important;
         }
-
-        .stat-item {
-            cursor: pointer;
-            transition: all 0.2s;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 13px;
-            white-space: nowrap;
-        }
-        .stat-item:hover {
-            background: rgba(34, 211, 238, 0.15);
-            color: #22d3ee;
-        }
-        .stat-item.active-filter {
-            background: #22d3ee;
-            color: #000 !important;
-            box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
-        }
     </style>
 </head>
 <body>
@@ -102,8 +84,8 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
         
-        // --- 靜態初始化配置 ---
-        const INITIAL_STATUS_OPTIONS = [
+        // --- 靜態配置 ---
+        const DEFAULT_STATUS_OPTIONS = [
             { id: 'unbought', label: '願望清單', color: 'text-white border-slate-500 bg-slate-700/30' },
             { id: 'bought', label: '已購買', color: 'text-cyan-300 border-cyan-500 bg-cyan-950/40' },
             { id: 'playing', label: '遊玩中', color: 'text-fuchsia-300 border-fuchsia-500 bg-fuchsia-950/40' },
@@ -155,7 +137,7 @@
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
-        // --- Firebase 初始化 (全域單例) ---
+        // --- Firebase 初始化 ---
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
             authDomain: "cloud-714ce.firebaseapp.com",
@@ -168,10 +150,10 @@
         const db = firebase.firestore();
         const auth = firebase.auth();
 
-        // --- 子組件：GameRow (純渲染) ---
+        // --- 子組件：GameRow ---
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
-            personnel, nameColorMap, currencies, statusOptions,
+            personnel, nameColorMap, currencies,
             onToggleGroup, onOpenEdit, onStartDrag, onDrop, 
             onUpdateOrder, onAddDLC, onNest, onUnnest, onAddPersonnel, onStatusUpdate, onDelete, onRemovePersonnel,
             onCategoryClick
@@ -249,8 +231,9 @@
                                     <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 w-[380px] shrink-0">
                                         <span className="font-black truncate w-20 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
                                         <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
-                                            {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                                            {DEFAULT_STATUS_OPTIONS.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                                         </select>
+                                        
                                         {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
                                             <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
                                                 <select value={p.purchaseCurrency || currencies[0]} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
@@ -260,8 +243,9 @@
                                                 <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />
                                             </div>
                                         ) : (
-                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 font-black text-xs transition-all">+ $</button>
+                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
                                         )}
+
                                         {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
                                             <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
                                                 <select value={p.purchaseCurrency2 || currencies[2] || 'US$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
@@ -271,7 +255,7 @@
                                                 <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />
                                             </div>
                                         ) : (
-                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: currencies[2]||'US$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 font-black text-xs transition-all">+ $</button>
+                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: currencies[2]||'US$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
                                         )}
                                         <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                     </div>
@@ -283,7 +267,7 @@
                         </div>
                     </td>
                     <td className="px-4 text-center">
-                        <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}><Icon name="trash-2" className="w-5 h-5" /></button>
+                        <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}><Icon name="trash-2" className="w-5 h-5" /></button>
                     </td>
                 </tr>
             );
@@ -291,22 +275,19 @@
 
         // --- 主應用組件 ---
         function App() {
-            // 修復：必須先定義 appId，才能被 useState 與 useMemo 引用
+            // 定義 appId
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
 
-            // Firebase & Auth
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
             const [isLoadingLogs, setIsLoadingLogs] = useState(true);
             const [isLoadingGames, setIsLoadingGames] = useState(true);
             
-            // User Data
             const [userName, setUserName] = useState(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
             const [userColor, setUserColor] = useState(safeGetStorage('steam_user_color', '#22d3ee'));
             const [isEditingName, setIsEditingName] = useState(false);
             
-            // Game Matrix
             const [games, setGames] = useState([]); 
             const [allUserStatuses, setAllUserStatuses] = useState([]); 
             const [isModalOpen, setIsModalOpen] = useState(false);
@@ -317,21 +298,17 @@
             const [draggedIdx, setDraggedIdx] = useState(null);
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
+            const [searchQuery, setSearchQuery] = useState(''); 
+            const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
             
-            // Config
             const [statsMembers, setStatsMembers] = useState(safeGetStorage(`steam_stats_members_${appId}`, []));
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [currencies, setCurrencies] = useState(safeGetStorage(`steam_currencies_${appId}`, ["HK$", "NT$", "US$", "JP¥", "CN¥"]));
             const [newCurrencyInput, setNewCurrencyInput] = useState('');
-            const [searchQuery, setSearchQuery] = useState(''); 
-            const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
             
-            // 分類與狀態功能
             const [categories, setCategories] = useState([]);
             const [selectedCategory, setSelectedCategory] = useState(null);
-            const [statusOptions, setStatusOptions] = useState(INITIAL_STATUS_OPTIONS);
-            const [activeStatusFilter, setActiveStatusFilter] = useState({ userName: null, statusId: null });
             const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
             const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -349,12 +326,13 @@
 
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
-            // --- 修復邏輯：核心輔助函數 (調整定義順序) ---
             const closeModal = useCallback(() => { 
                 setFormData({ name: '', addedBy: '', price: '', currency: currencies[0], url: '', cover: null, parentId: '', category: '' }); 
                 setEditingId(null); 
                 setIsModalOpen(false); 
             }, [currencies]);
+
+            const logActivity = useCallback((action, gameName) => { if(db && user) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); }, [userName, user, paths]);
 
             const renormalizeLayer = async (parentId = "") => {
                 const siblings = games.filter(g => (g.parentId || "") === parentId);
@@ -376,23 +354,6 @@
 
             const handleToggleFilter = (cat) => {
                 setSelectedCategory(prev => prev === cat ? null : cat);
-                setActiveStatusFilter({ userName: null, statusId: null });
-            };
-
-            const handleToggleStatusFilter = (userName, statusId) => {
-                setActiveStatusFilter(prev => {
-                    if (prev.userName === userName && prev.statusId === statusId) return { userName: null, statusId: null };
-                    return { userName, statusId };
-                });
-                setSelectedCategory(null);
-            };
-
-            const handleSaveStatusLabel = async (statusId, newLabel) => {
-                if (!newLabel) return;
-                const next = statusOptions.map(opt => opt.id === statusId ? { ...opt, label: newLabel } : opt);
-                setStatusOptions(next);
-                await db.collection(paths.settings).doc('global').set({ statusOptions: next }, { merge: true });
-                showNotify("標籤名稱已同步");
             };
 
             const handleAddCategory = async () => {
@@ -431,18 +392,15 @@
                 });
                 await batch.commit();
                 if (selectedCategory === oldName) setSelectedCategory(newName);
-                showNotify("分類已重新命名");
+                showNotify("分類名稱已更新");
             };
 
-            // --- 數據還原邏輯 (重要修復) ---
             const handleExportData = useCallback(() => {
-                const data = { 
-                    version: "5.6", appId, games, userStatuses: allUserStatuses, statsMembers, currencies, categories, statusOptions 
-                };
+                const data = { version: "5.2", appId, games, userStatuses: allUserStatuses, statsMembers, currencies, categories };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
                 showNotify("數據備份已導出");
-            }, [games, allUserStatuses, statsMembers, currencies, categories, statusOptions, appId, showNotify]);
+            }, [games, allUserStatuses, statsMembers, currencies, categories, appId, showNotify]);
 
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -467,15 +425,13 @@
                         const settingsUpdate = {};
                         if (data.currencies) settingsUpdate.currencies = data.currencies;
                         if (data.categories) settingsUpdate.categories = data.categories;
-                        if (data.statusOptions) settingsUpdate.statusOptions = data.statusOptions;
                         if (Object.keys(settingsUpdate).length > 0) await db.collection(paths.settings).doc('global').set(settingsUpdate, { merge: true });
-                        showNotify("資料已完整還原（含人員進度）");
+                        showNotify("備份已還原（含人員狀態）");
                     } catch (err) { showNotify("導入失敗：格式不符"); }
                 };
                 reader.readAsText(file);
             }, [paths, appId, showNotify]);
 
-            // --- 初始化與數據同步 ---
             useEffect(() => {
                 const initAuth = async () => {
                     try {
@@ -511,9 +467,8 @@
                 const unsubSettings = db.collection(paths.settings).doc('global').onSnapshot(doc => {
                     if (doc.exists) {
                         const d = doc.data();
-                        if (d.currencies) setCurrencies(d.currencies);
+                        if (d.currencies) { setCurrencies(d.currencies); safeSetStorage(`steam_currencies_${appId}`, d.currencies); }
                         if (d.categories) setCategories(d.categories);
-                        if (d.statusOptions) setStatusOptions(d.statusOptions);
                     }
                 });
                 return () => { unsubPresence(); unsubLogs(); unsubGames(); unsubStatuses(); unsubSettings(); };
@@ -537,10 +492,10 @@
                 return tableMemberNames.map(name => {
                     const userStatuses = allUserStatuses.filter(s => s.userName === name);
                     const stats = {};
-                    statusOptions.forEach(opt => { stats[opt.id] = userStatuses.filter(s => s.status === opt.id).length; });
+                    DEFAULT_STATUS_OPTIONS.forEach(opt => { stats[opt.id] = userStatuses.filter(s => s.status === opt.id).length; });
                     return { name, color: map[name] || '#ffffff', stats };
                 });
-            }, [tableMemberNames, allUserStatuses, onlineUsers, userName, userColor, statusOptions]);
+            }, [tableMemberNames, allUserStatuses, onlineUsers, userName, userColor]);
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
@@ -549,12 +504,6 @@
                     list = list.filter(g => (g.name || "").toLowerCase().includes(q));
                 }
                 if (selectedCategory) list = list.filter(g => g.category === selectedCategory);
-                if (activeStatusFilter.userName && activeStatusFilter.statusId) {
-                    list = list.filter(g => {
-                        const s = allUserStatuses.find(stat => stat.gameId === g.id && stat.userName === activeStatusFilter.userName);
-                        return s && s.status === activeStatusFilter.statusId;
-                    });
-                }
                 list.sort((a, b) => {
                     let valA = a[sortConfig.key]; let valB = b[sortConfig.key];
                     if (sortConfig.key === 'order') { valA = parseInt(valA)||0; valB = parseInt(valB)||0; }
@@ -567,7 +516,7 @@
                 const children = {};
                 list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
                 return { roots, children };
-            }, [games, searchQuery, sortConfig, selectedCategory, activeStatusFilter, allUserStatuses]);
+            }, [games, searchQuery, sortConfig, selectedCategory]);
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -585,6 +534,13 @@
                 } catch (err) { showNotify("同步失敗"); }
             }, [formData, user, editingId, games, userName, paths, showNotify, closeModal]);
 
+            const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
+                if (!user) return;
+                const docId = `${gameId}_${targetUserId}`;
+                if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
+                await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
+            }, [user, userColor, userName, paths]);
+
             const handleDeleteGame = useCallback(async (game) => {
                 if (!user || !confirm(`確定刪除 ${game.name}？`)) return;
                 const pId = game.parentId || "";
@@ -593,9 +549,23 @@
                 showNotify("已刪除");
             }, [user, games, paths, showNotify]);
 
+            const openEditModal = useCallback((g) => { 
+                setEditingId(g.id); 
+                setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'', category: g.category||'' }); 
+                setIsModalOpen(true); 
+            }, [currencies]);
+
+            const handleRemoveStatsMember = useCallback((name) => {
+                if(confirm(`確定移除本地預置成員 ${name} 嗎？`)) { 
+                    const next = statsMembers.filter(m => m !== name);
+                    setStatsMembers(next); 
+                    safeSetStorage(`steam_stats_members_${appId}`, next);
+                }
+            }, [statsMembers, appId]);
+
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, isEditLocked, categories.length, isCategoryModalOpen, selectedCategory, activeStatusFilter]);
+            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, isEditLocked, categories.length, isCategoryModalOpen, selectedCategory]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -605,7 +575,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.6</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2 (Restored)</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -615,7 +585,7 @@
                                 <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs uppercase tracking-widest"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[14px] space-y-1 text-slate-400">
                                     {isLoadingLogs ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
-                                        <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMapInternal[log.userName] || 'white' }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
+                                        <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: 'white' }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
                                     ))}
                                 </div>
                             </div>
@@ -633,30 +603,17 @@
                             <div className="lg:col-span-4 bg-[#0d1117]/80 p-4 h-[180px] border border-white/10 relative flex flex-col rounded shadow-2xl">
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400"></div>
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                                    <div className="flex items-center gap-2"><span>成員統計</span><button onClick={() => setIsCategoryModalOpen(true)} className="ml-2 bg-indigo-600/30 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded text-[10px] hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-tighter">系統管理</button></div>
+                                    <div className="flex items-center gap-2"><span>成員統計</span><button onClick={() => setIsCategoryModalOpen(true)} className="ml-2 bg-indigo-600/30 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded text-[10px] hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-tighter">分類管理</button></div>
                                     <div className="flex items-center gap-3">
                                         <Icon name="download" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={handleExportData} />
                                         <Icon name="upload" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => importInputRef.current.click()} /><input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-                                    <table className="w-full text-[14px] font-black border-collapse mb-2">
+                                    <table className="w-full text-[15px] font-black border-collapse mb-4">
                                         <tbody>
                                             {allMembersStats.map(m => (
-                                                <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5">
-                                                    <td className="py-1.5" style={{ color: m.color }}>{m.name}</td>
-                                                    {statusOptions.map(opt => (
-                                                        <td key={opt.id} className="text-center px-1">
-                                                            <span 
-                                                                className={`stat-item ${activeStatusFilter.userName === m.name && activeStatusFilter.statusId === opt.id ? 'active-filter' : ''}`}
-                                                                onClick={() => handleToggleStatusFilter(m.name, opt.id)}
-                                                            >
-                                                                {(opt.label || "").slice(0,2)} {m.stats?.[opt.id] || 0}
-                                                            </span>
-                                                        </td>
-                                                    ))}
-                                                    <td className="w-4"><Icon name="x" className="w-3 h-3 text-red-900 opacity-0 group-hover:opacity-100" onClick={() => handleRemoveStatsMember(m.name)} /></td>
-                                                </tr>
+                                                <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors"><td className="py-1" style={{ color: m.color }}>{m.name}</td><td className="text-slate-500">願望 {m.stats.unbought}</td><td className="text-cyan-600">已購 {m.stats.bought}</td><td className="text-fuchsia-600">遊玩 {m.stats.playing}</td><td className="w-4"><Icon name="x" className="w-3 h-3 text-red-900 opacity-0 group-hover:opacity-100 cursor-pointer" onClick={() => handleRemoveStatsMember(m.name)} /></td></tr>
                                             ))}
                                         </tbody>
                                     </table>
@@ -681,7 +638,7 @@
                                         </div>
                                     )}
                                 </div>
-                                <div className="px-6 flex items-center border-l border-slate-800"><button onClick={() => setIsEditLocked(!isEditLocked)} className={`px-4 py-1.5 rounded-full font-black text-xs border transition-all ${isEditLocked ? 'text-red-400 border-red-500/50 bg-red-950/20' : 'text-green-400 border-green-500/50 bg-green-950/20'}`}><Icon name={isEditLocked ? "lock" : "unlock"} className="w-3 h-3 mr-1 inline" />{isEditLocked ? "鎖定模式" : "解鎖模式"}</button></div>
+                                <div className="px-6 flex items-center border-l border-slate-800"><button onClick={() => setIsEditLocked(!isEditLocked)} className={`px-4 py-1.5 rounded-full font-black text-xs border transition-all ${isEditLocked ? 'text-red-400 border-red-500/50 bg-red-950/20' : 'text-green-400 border-green-500/50 bg-green-950/20'}`}><Icon name={isEditLocked ? "lock" : "unlock"} className="w-3 h-3 mr-1 inline" />{isEditLocked ? "鎖定" : "解鎖"}</button></div>
                             </div>
                             <div className="bg-slate-900/60 border border-slate-700 overflow-x-auto custom-scrollbar">
                                 <table className="w-full text-left border-collapse min-w-[1500px]">
@@ -692,8 +649,8 @@
                                         {isLoadingGames ? (<tr><td colSpan="8" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING DATA...</td></tr>) : 
                                             hierarchy.roots.map((g, i) => (
                                                 <React.Fragment key={g.id}>
-                                                    <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies} statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0} personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={() => setExpandedGroups(p => { const n = new Set(p); if(n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })} onOpenEdit={openEditModal} onStartDrag={setDraggedId} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) || 0 })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0], category: g.category}); setEditingId(null); setIsModalOpen(true);}} onCategoryClick={handleToggleFilter} onUnnest={(id) => db.collection(paths.games).doc(id).update({ parentId: "" })} onNest={(childId) => db.collection(paths.games).doc(childId).update({ parentId: g.id })} />
-                                                    {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child) => (<GameRow key={child.id} g={child} index={-1} isChild={true} currencies={currencies} statusOptions={statusOptions} isEditLocked={isEditLocked} nameColorMap={nameColorMap} personnel={gamePersonnelMap[child.id] || []} onOpenEdit={openEditModal} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) || 0 })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onCategoryClick={handleToggleFilter} onUnnest={(id) => db.collection(paths.games).doc(id).update({ parentId: "" })} />))}
+                                                    <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0} personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={() => setExpandedGroups(p => { const n = new Set(p); if(n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })} onOpenEdit={openEditModal} onStartDrag={setDraggedId} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) || 0 })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0], category: g.category}); setEditingId(null); setIsModalOpen(true);}} onCategoryClick={handleToggleFilter} onUnnest={(id) => db.collection(paths.games).doc(id).update({ parentId: "" })} onNest={(childId) => db.collection(paths.games).doc(childId).update({ parentId: g.id })} />
+                                                    {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child) => (<GameRow key={child.id} g={child} index={-1} isChild={true} currencies={currencies} isEditLocked={isEditLocked} nameColorMap={nameColorMap} personnel={gamePersonnelMap[child.id] || []} onOpenEdit={openEditModal} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) || 0 })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onCategoryClick={handleToggleFilter} onUnnest={(id) => db.collection(paths.games).doc(id).update({ parentId: "" })} />))}
                                                 </React.Fragment>
                                             ))
                                         }
@@ -703,35 +660,20 @@
                         </div>
                     </div>
 
-                    {/* 管理彈窗 (分類與標籤) */}
+                    {/* 管理彈窗 */}
                     {isCategoryModalOpen && (
                         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-slate-900 border border-slate-700 w-full max-w-lg p-8 rounded shadow-2xl relative">
+                            <div className="bg-slate-900 border border-slate-700 w-full max-w-md p-8 rounded shadow-2xl relative">
                                 <button onClick={() => setIsCategoryModalOpen(false)} className="absolute right-6 top-6 text-slate-500 hover:text-white transition-colors"><Icon name="x" className="w-6 h-6" /></button>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div>
-                                        <h4 className="text-cyan-400 font-black text-lg mb-4 uppercase tracking-widest italic border-b border-cyan-400/20 pb-2">分類管理</h4>
-                                        <div className="flex gap-2 mb-4">
-                                            <input type="text" placeholder="新分類..." className="flex-1 bg-black border border-slate-800 p-2 rounded outline-none focus:border-cyan-500 font-bold text-xs" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCategory()} />
-                                            <button onClick={handleAddCategory} className="bg-cyan-600 hover:bg-cyan-500 text-black px-3 py-1 rounded font-black text-[10px] uppercase">新增</button>
-                                        </div>
-                                        <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                                            {categories.map(cat => (
-                                                <div key={cat} className="flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded group"><span className="font-bold text-xs text-slate-300">{cat}</span><div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="edit-2" className="w-3 h-3 text-slate-500 hover:text-cyan-400" onClick={() => handleRenameCategory(cat)} /><Icon name="trash-2" className="w-3 h-3 text-slate-500 hover:text-red-500" onClick={() => handleRemoveCategory(cat)} /></div></div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-fuchsia-400 font-black text-lg mb-4 uppercase tracking-widest italic border-b border-fuchsia-400/20 pb-2">標籤管理</h4>
-                                        <div className="space-y-4">
-                                            {statusOptions.map(opt => (
-                                                <div key={opt.id} className="bg-black/40 p-2 rounded border border-white/5">
-                                                    <label className="text-[10px] text-slate-500 uppercase mb-1 block">ID: {opt.id}</label>
-                                                    <input type="text" className="w-full bg-slate-950 border border-slate-800 p-2 rounded outline-none focus:border-fuchsia-400 font-black text-xs" defaultValue={opt.label} onBlur={(e) => handleSaveStatusLabel(opt.id, e.target.value)} />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                <h4 className="text-cyan-400 font-black text-xl mb-6 uppercase tracking-widest italic border-b border-cyan-400/20 pb-2">分類管理</h4>
+                                <div className="flex gap-2 mb-6">
+                                    <input type="text" placeholder="輸入新分類..." className="flex-1 bg-black border border-slate-800 p-3 rounded outline-none focus:border-cyan-500 font-bold text-sm" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCategory()} />
+                                    <button onClick={handleAddCategory} className="bg-cyan-600 hover:bg-cyan-500 text-black px-4 py-2 rounded font-black text-xs uppercase transition-all">新增</button>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                                    {categories.map(cat => (
+                                        <div key={cat} className="flex items-center justify-between bg-black/40 border border-white/5 p-3 rounded group"><span className="font-bold text-slate-300">{cat}</span><div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="edit-2" className="w-4 h-4 text-slate-500 hover:text-cyan-400" onClick={() => handleRenameCategory(cat)} /><Icon name="trash-2" className="w-4 h-4 text-slate-500 hover:text-red-500" onClick={() => handleRemoveCategory(cat)} /></div></div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -739,10 +681,10 @@
 
                     {/* 錄入彈窗 */}
                     {isModalOpen && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm animate-in fade-in">
                             <div className="bg-[#0b0e14] border-t-2 border-cyan-400 w-full max-w-2xl p-10 relative shadow-2xl rounded-sm">
-                                <button onClick={closeModal} className="absolute right-8 top-8 text-slate-600 hover:text-white"><Icon name="x" className="w-6 h-6" /></button>
-                                <h3 className="text-3xl font-black mb-10 italic underline decoration-cyan-400/30 decoration-4 uppercase tracking-tighter">{editingId ? '修改' : '錄入'} <span className="text-cyan-400">{formData.parentId ? 'DLC' : '遊戲'}</span></h3>
+                                <button onClick={closeModal} className="absolute right-8 top-8 text-slate-600 hover:text-white transition-colors"><Icon name="x" className="w-6 h-6" /></button>
+                                <h3 className="text-3xl font-black mb-10 italic underline decoration-cyan-400/30 decoration-4 uppercase tracking-tighter">{editingId ? '修改' : '錄入'} <span className="text-cyan-400">{formData.parentId ? 'DLC 擴充' : '數據庫'}</span></h3>
                                 <form onSubmit={handleSaveGame} className="grid grid-cols-1 md:grid-cols-3 gap-10">
                                     <div className="md:col-span-1">
                                         <div onClick={()=>fileInputRef.current.click()} className="aspect-[3/4] bg-slate-950 border border-slate-800 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-cyan-400 transition-colors">
@@ -752,8 +694,8 @@
                                     </div>
                                     <div className="md:col-span-2 space-y-6">
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">提起人</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}><option value="">選擇...</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">遊戲分類</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})}><option value="">選擇...</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">提起人</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}><option value="">選擇人員...</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">遊戲分類</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})}><option value="">選擇分類...</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                                         </div>
                                         <div className="w-full"><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">遊戲名稱</label><textarea required rows="2" className="w-full bg-transparent border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all resize-none custom-scrollbar font-black" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} /></div>
                                         <div className="grid grid-cols-2 gap-6">
@@ -772,9 +714,9 @@
                         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
                                 <h4 className="text-indigo-400 font-black mb-4 uppercase tracking-widest text-sm">添加遊戲人員</h4>
-                                <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 font-black text-sm" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇 -</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 手動輸入 -</option></select>
+                                <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 font-black text-sm" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇人員 -</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 其他人 (手動輸入) -</option></select>
                                 {newPersonnelInput.name === "_manual_" && (<input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 text-sm" placeholder="輸入名稱..." onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />)}
-                                <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black uppercase rounded">取消</button><button onClick={() => { if (newPersonnelInput.name && newPersonnelInput.name !== "_manual_") handleAddPersonnel(newPersonnelInput.gameId); else showNotify("請填寫名稱"); }} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded">確認添加</button></div>
+                                <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black uppercase rounded">取消</button><button onClick={() => { if (newPersonnelInput.name && newPersonnelInput.name !== "_manual_") handleAddPersonnel(newPersonnelInput.gameId); else showNotify("請輸入名稱"); }} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded">確認添加</button></div>
                             </div>
                         </div>
                     )}
