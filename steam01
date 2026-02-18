@@ -146,7 +146,7 @@
         const auth = firebase.auth();
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
 
-        // --- 子組件：GameRow ---
+        // --- 子組件：GameRow (性能優化版) ---
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
             personnel, nameColorMap, currencies,
@@ -295,8 +295,6 @@
             const [draggedIdx, setDraggedIdx] = useState(null);
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
-            
-            // 預設預置成員為空，等待導入
             const [statsMembers, setStatsMembers] = useState(safeGetStorage(`steam_stats_members_${appId}`, []));
             const [newMemberName, setNewMemberName] = useState('');
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
@@ -318,7 +316,6 @@
 
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
-            // 提取數據庫表格中實際存在的 ID (包含玩家與提起人)
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -326,40 +323,34 @@
                 return Array.from(names).filter(Boolean).sort();
             }, [allUserStatuses, games]);
 
-            // 【核心優化】下拉選單僅根據 [遊戲數據主表格] 有的 ID，不再整合在線狀態
             const allAvailableMembers = useMemo(() => {
-                // 直接使用數據表中存在的 ID 作為選單內容
                 return [...tableMemberNames];
             }, [tableMemberNames]);
 
-            // 成員統計板塊：根據 [遊戲數據主表格] 顯示
-            const allMembersStats = useMemo(() => {
-                const nameColorMapInternal = {};
-                onlineUsers.forEach(u => nameColorMapInternal[u.name] = u.color);
-                allUserStatuses.forEach(s => { if (s.userColor && !nameColorMapInternal[s.userName]) nameColorMapInternal[s.userName] = s.userColor; });
-                nameColorMapInternal[userName] = userColor;
+            const nameColorMap = useMemo(() => {
+                const map = {};
+                onlineUsers.forEach(u => map[u.name] = u.color);
+                allUserStatuses.forEach(s => { if (s.userColor && !map[s.userName]) map[s.userName] = s.userColor; });
+                map[userName] = userColor;
+                return map;
+            }, [onlineUsers, allUserStatuses, userName, userColor]);
 
+            const allMembersStats = useMemo(() => {
                 return tableMemberNames.map(name => {
                     const userStatuses = allUserStatuses.filter(s => s.userName === name);
                     const stats = {};
                     DEFAULT_STATUS_OPTIONS.forEach(opt => { stats[opt.id] = userStatuses.filter(s => s.status === opt.id).length; });
                     return { 
                         name, 
-                        color: nameColorMapInternal[name] || '#ffffff', 
+                        color: nameColorMap[name] || '#ffffff', 
                         stats 
                     };
                 });
-            }, [tableMemberNames, allUserStatuses, onlineUsers, userName, userColor]);
-
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, isEditLocked, showSearchSuggestions, newPersonnelInput.gameId]);
+            }, [tableMemberNames, allUserStatuses, nameColorMap]);
 
             useEffect(() => {
                 const initAuth = async () => {
-                    try {
-                        await auth.signInAnonymously();
-                    } catch (e) {}
+                    try { await auth.signInAnonymously(); } catch (e) {}
                 };
                 initAuth();
                 const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
@@ -446,14 +437,6 @@
                 return () => document.removeEventListener('mousedown', handleClickOutside);
             }, []);
 
-            const nameColorMap = useMemo(() => {
-                const map = {};
-                onlineUsers.forEach(u => map[u.name] = u.color);
-                allUserStatuses.forEach(s => { if (s.userColor && !map[s.userName]) map[s.userName] = s.userColor; });
-                map[userName] = userColor;
-                return map;
-            }, [onlineUsers, allUserStatuses, userName, userColor]);
-
             const gamePersonnelMap = useMemo(() => {
                 const map = {};
                 allUserStatuses.forEach(s => { if (!map[s.gameId]) map[s.gameId] = []; map[s.gameId].push(s); });
@@ -463,7 +446,7 @@
             const searchSuggestions = useMemo(() => {
                 if (!searchQuery.trim()) return [];
                 const q = searchQuery.toLowerCase();
-                return games.filter(g => g.name.toLowerCase().includes(q)).slice(0, 10);
+                return games.filter(g => (g.name || "").toLowerCase().includes(q)).slice(0, 10);
             }, [games, searchQuery]);
 
             const hierarchy = useMemo(() => {
@@ -555,20 +538,30 @@
                 await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
             }, [currencies, paths]);
 
+            // --- 新增：定義 handleExportData ---
             const handleExportData = useCallback(() => {
                 const data = { version: "2.95", appId, games, userStatuses: allUserStatuses, statsMembers, currencies };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
+                const a = document.createElement('a'); 
+                a.href = URL.createObjectURL(blob); 
+                a.download = `steam_backup_${Date.now()}.json`; 
+                a.click();
                 showNotify("數據備份已導出");
             }, [games, allUserStatuses, statsMembers, currencies, showNotify]);
 
+            // --- 新增：定義 handleImportData ---
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        if (data.games) { for (const g of data.games) { const { id, ...gd } = g; await db.collection(paths.games).doc(id).set(gd, { merge: true }); } }
+                        if (data.games) { 
+                            for (const g of data.games) { 
+                                const { id, ...gd } = g; 
+                                await db.collection(paths.games).doc(id).set(gd, { merge: true }); 
+                            } 
+                        }
                         if (data.statsMembers) { setStatsMembers(data.statsMembers); safeSetStorage(`steam_stats_members_${appId}`, data.statsMembers); }
                         if (data.currencies) { setCurrencies(data.currencies); await db.collection(paths.settings).doc('global').set({ currencies: data.currencies }, { merge: true }); }
                         showNotify("導入成功");
@@ -631,30 +624,6 @@
                 setNewPersonnelInput({ gameId: null, name: '' });
                 showNotify(`已新增人員 ${name}`);
             }, [newPersonnelInput.name, nameColorMap, currencies, handleStatusUpdate, showNotify]);
-
-            const handleNestGame = useCallback(async (childId, parentId) => {
-                if (isEditLocked || !childId || childId === parentId) return;
-                try {
-                    const child = games.find(g => g.id === childId);
-                    const oldParentId = child ? (child.parentId || "") : "";
-                    const newSiblings = games.filter(g => (g.parentId || "") === parentId);
-                    await db.collection(paths.games).doc(childId).update({ parentId, order: newSiblings.length + 1 });
-                    await renormalizeLayer(oldParentId); 
-                    showNotify("已移至分組並補號");
-                } catch (e) { showNotify("分組失敗"); }
-            }, [isEditLocked, games, paths, showNotify]);
-
-            const handleUnnestGame = useCallback(async (gameId) => {
-                if (isEditLocked) return;
-                try {
-                    const item = games.find(g => g.id === gameId);
-                    const oldParentId = item ? (item.parentId || "") : "";
-                    const rootItems = games.filter(g => !g.parentId);
-                    await db.collection(paths.games).doc(gameId).update({ parentId: "", order: rootItems.length + 1 });
-                    await renormalizeLayer(oldParentId);
-                    showNotify("已移至根目錄並補號");
-                } catch (e) { showNotify("移出失敗"); }
-            }, [isEditLocked, games, paths, showNotify]);
 
             const handleDeleteGame = useCallback(async (game) => {
                 if (!user || !confirm(`確定刪除 ${game.name}？`)) return;
@@ -765,6 +734,9 @@
                                         <Icon name="upload" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => importInputRef.current.click()} />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
+                                    <div className="flex items-center gap-1.5 edit-only">
+                                        <input type="text" placeholder="+ 本地預置人名" className="bg-black/50 border-b border-slate-700 text-[10px] px-2 w-24 outline-none" value={newMemberName} onChange={e => setNewMemberName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddStatsMember()} /><Icon name="user-plus" className="w-3.5 h-3.5 cursor-pointer hover:text-indigo-400" onClick={handleAddStatsMember} />
+                                    </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
                                     <table className="w-full text-[15px] font-black border-collapse mb-4">
@@ -865,9 +837,9 @@
                                                         onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
                                                         onStartDrag={(id, idx) => { setDraggedId(id); setDraggedIdx(idx); }} onDrop={onDropReorder} onUpdateOrder={handleUpdateOrder}
                                                         onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0]}); setEditingId(null); setIsModalOpen(true);}}
-                                                        onNest={(id)=>handleNestGame(draggedId, id)}
-                                                        onUnnest={handleUnnestGame} 
-                                                        onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: allAvailableMembers[0] || ''})}
+                                                        onNest={(cid, pid) => db.collection(paths.games).doc(cid).update({parentId:pid})}
+                                                        onUnnest={(id) => db.collection(paths.games).doc(id).update({parentId:""})} 
+                                                        onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})}
                                                         onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame}
                                                         onRemovePersonnel={handleRemovePersonnel}
                                                     />
@@ -878,8 +850,9 @@
                                                             personnel={gamePersonnelMap[child.id] || []}
                                                             onOpenEdit={openEditModal} onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate} 
                                                             onDelete={handleDeleteGame}
-                                                            onUnnest={handleUnnestGame} onRemovePersonnel={handleRemovePersonnel}
-                                                            onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: allAvailableMembers[0] || ''})}
+                                                            onUnnest={(id) => db.collection(paths.games).doc(id).update({parentId:""})} 
+                                                            onRemovePersonnel={handleRemovePersonnel}
+                                                            onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})}
                                                         />
                                                     ))}
                                                 </React.Fragment>
@@ -951,13 +924,14 @@
                                     value={newPersonnelInput.name} 
                                     onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}
                                 >
+                                    <option value="">- 請選擇人員 -</option>
                                     {allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}
-                                    <option value="">- 其他人 (手動輸入) -</option>
+                                    <option value="_manual_">- 其他人 (手動輸入) -</option>
                                 </select>
-                                {newPersonnelInput.name === "" && (
+                                {newPersonnelInput.name === "_manual_" && (
                                     <input 
                                         className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" 
-                                        placeholder="輸入玩家名稱..." 
+                                        placeholder="輸入新玩家名稱..." 
                                         autoFocus
                                         onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}
                                         onKeyDown={e => e.key === 'Enter' && handleAddPersonnel(newPersonnelInput.gameId)}
@@ -965,7 +939,13 @@
                                 )}
                                 <div className="flex gap-2">
                                     <button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black uppercase rounded transition-colors hover:bg-slate-700">取消</button>
-                                    <button onClick={() => handleAddPersonnel(newPersonnelInput.gameId)} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded transition-colors hover:bg-indigo-500">確認添加</button>
+                                    <button onClick={() => {
+                                        if (newPersonnelInput.name && newPersonnelInput.name !== "_manual_") {
+                                            handleAddPersonnel(newPersonnelInput.gameId);
+                                        } else if (newPersonnelInput.name === "_manual_") {
+                                            showNotify("請輸入名稱");
+                                        }
+                                    }} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded transition-colors hover:bg-indigo-500">確認添加</button>
                                 </div>
                             </div>
                         </div>
