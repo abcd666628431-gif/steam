@@ -271,7 +271,7 @@
 
         // --- 主應用組件 ---
         function App() {
-            // 1. 狀態與定義
+            // 1. 狀態定義
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
@@ -294,14 +294,10 @@
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
 
-            // 拖拽狀態
             const [draggedId, setDraggedId] = useState(null);
             const [draggedIdx, setDraggedIdx] = useState(null);
+            const [activeFilter, setActiveFilter] = useState(null);
 
-            // 飾選器狀態
-            const [activeFilter, setActiveFilter] = useState(null); // { userName: string, statusId: string }
-
-            // 狀態文字自訂
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
             const [statusLabels, setStatusLabels] = useState({
                 unbought: '願望清單',
@@ -329,16 +325,32 @@
                 { id: 'completed', label: statusLabels.completed, color: 'text-lime-300 border-lime-500 bg-lime-950/40' },
             ], [statusLabels]);
 
-            // 2. 回調函式
+            // 2. 核心回調
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); 
+                if(isClient && db && user) {
+                    db.collection(paths.logs).add({ 
+                        userName, 
+                        action, 
+                        gameName, 
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp() 
+                    }).catch(() => {});
+                }
             }, [userName, user, paths]);
 
             const handleToggleGroup = useCallback((id) => {
                 setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
             }, []);
+
+            const handleSetFilter = (name, sid) => {
+                if (activeFilter?.userName === name && activeFilter?.statusId === sid) {
+                    setActiveFilter(null);
+                } else {
+                    setActiveFilter({ userName: name, statusId: sid });
+                    showNotify(`飾選：${name} - ${statusLabels[sid]}`);
+                }
+            };
 
             const closeModal = useCallback(() => { 
                 setFormData({ name: '', addedBy: '', price: '', currency: currencies[0], url: '', cover: null, parentId: '' }); 
@@ -365,17 +377,7 @@
                 }, { merge: true });
             }, [user, userColor, userName, paths]);
 
-            // 飾選處理
-            const handleSetFilter = (userName, statusId) => {
-                if (activeFilter && activeFilter.userName === userName && activeFilter.statusId === statusId) {
-                    setActiveFilter(null);
-                } else {
-                    setActiveFilter({ userName, statusId });
-                    showNotify(`正在飾選：${userName} 的 ${statusLabels[statusId]}`);
-                }
-            };
-
-            // 3. 數據計算
+            // 3. 計算屬性
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -399,24 +401,16 @@
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
-
-                // --- 新增：狀態飾選邏輯 ---
                 if (activeFilter) {
-                    const { userName: fName, statusId: fStatus } = activeFilter;
-                    // 找出符合此人此狀態的所有遊戲 ID
-                    const allowedGameIds = allUserStatuses
-                        .filter(s => s.userName === fName && s.status === fStatus)
+                    const matchedGameIds = allUserStatuses
+                        .filter(s => s.userName === activeFilter.userName && s.status === activeFilter.statusId)
                         .map(s => s.gameId);
-                    
-                    // 過濾清單
-                    list = list.filter(g => allowedGameIds.includes(g.id));
+                    list = list.filter(g => matchedGameIds.includes(g.id));
                 }
-
                 if (searchQuery.trim()) {
                     const q = searchQuery.toLowerCase();
                     list = list.filter(g => (g.name || "").toLowerCase().includes(q));
                 }
-                
                 list.sort((a, b) => {
                     let valA = a[sortConfig.key]; let valB = b[sortConfig.key];
                     if (sortConfig.key === 'order') { valA = parseInt(valA)||0; valB = parseInt(valB)||0; } 
@@ -425,7 +419,6 @@
                     if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                     return 0;
                 });
-                
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
                 list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
@@ -443,7 +436,7 @@
                 });
             }, [tableMemberNames, allUserStatuses, nameColorMap]);
 
-            // 4. 初始化與監聽
+            // 4. 資料初始化與監聽 (含日誌與成員)
             useEffect(() => {
                 if (isClient) {
                     setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
@@ -463,32 +456,94 @@
                     try { await auth.signInAnonymously(); } catch (e) {}
                 };
                 initAuth();
-                const unsub = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsub();
+                const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
+                return () => unsubAuth();
             }, []);
 
             useEffect(() => {
                 if (!isClient || !user) return;
+
+                // --- 心跳更新 (在線狀態) ---
+                const updatePresence = () => {
+                    db.collection(paths.presence).doc(user.uid).set({ 
+                        uid: user.uid, name: userName, color: userColor, 
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true });
+                };
+                updatePresence();
+                const heartbeat = setInterval(updatePresence, 30000);
+                
+                // --- 在線成員監聽 ---
+                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
+                    const list = []; const now = Date.now();
+                    snap.forEach(doc => { 
+                        const d = doc.data(); 
+                        if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); 
+                    });
+                    setOnlineUsers(list);
+                });
+
+                // --- 實時日誌監聽 ---
+                const unsubL = db.collection(paths.logs).onSnapshot(snap => {
+                    const logs = []; 
+                    snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                    setActivityLogs(logs.slice(0, 30)); 
+                    setIsLoadingLogs(false);
+                });
+
+                // --- 遊戲數據監聽 ---
                 const unsubG = db.collection(paths.games).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setGames(data); setIsLoadingGames(false);
                 });
+
+                // --- 用戶狀態監聽 ---
                 const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(data);
                 });
+
+                // --- 設定文字監聽 ---
                 const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => {
                     if (doc.exists) setStatusLabels(doc.data());
                 });
-                return () => { unsubG(); unsubS(); unsubLabels(); };
-            }, [user, paths]);
 
-            // 5. 導入/導出功能
+                return () => { 
+                    clearInterval(heartbeat); 
+                    unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); 
+                };
+            }, [user, userName, userColor, paths]);
+
+            // 5. 功能操作
+            const handleSaveGame = async (e) => {
+                if (e) e.preventDefault();
+                if (!formData.name.trim() || !user) return;
+                try {
+                    const finalData = { ...formData, addedBy: formData.addedBy || userName };
+                    if (editingId) { 
+                        await db.collection(paths.games).doc(editingId).update(finalData); 
+                        logActivity("修改數據", finalData.name); 
+                    } else { 
+                        const siblings = games.filter(g => (g.parentId || "") === (formData.parentId || ""));
+                        const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
+                        await db.collection(paths.games).add({ ...finalData, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
+                        logActivity("新增錄入", finalData.name); 
+                    }
+                    showNotify("同步成功"); closeModal();
+                } catch (err) { showNotify("同步失敗"); }
+            };
+
+            const handleDeleteGame = async (g) => {
+                if(!confirm(`確定刪除 ${g.name}?`)) return;
+                await db.collection(paths.games).doc(g.id).delete();
+                logActivity("刪除遊戲", g.name);
+            };
+
             const handleExportData = () => {
-                const backup = { version: "4.8", games, statuses: allUserStatuses, settings: { statusLabels } };
+                const backup = { version: "4.9", games, statuses: allUserStatuses, settings: { statusLabels } };
                 const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
-                showNotify("導出成功");
             };
 
             const handleImportData = (e) => {
@@ -500,20 +555,13 @@
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                await db.collection(paths.games).doc(id).set(gd, { merge: true });
+                                await db.collection(paths.games).doc(id || undefined).set(gd, { merge: true });
                             }
                         }
                         showNotify("導入完成");
-                    } catch (err) { showNotify("導失敗"); }
+                    } catch (err) { showNotify("導入失敗"); }
                 };
                 reader.readAsText(file);
-            };
-
-            const handleUpdateLabels = async (e) => {
-                e.preventDefault();
-                await db.collection(paths.settings).doc('labels').set(statusLabels);
-                setIsStatusSettingsOpen(false);
-                showNotify("標籤更新成功");
             };
 
             return (
@@ -531,11 +579,11 @@
                         </header>
                         
                         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 mb-8">
-                            {/* 操作日誌 */}
+                            {/* 操作日誌 - 功能還原 */}
                             <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 p-4 h-[180px] overflow-hidden flex flex-col rounded shadow-inner">
                                 <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
-                                    {isLoadingLogs ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
+                                    {isLoadingLogs ? <div className="animate-pulse italic">同步日誌中...</div> : activityLogs.map(log => (
                                         <div key={log.id}>
                                             [{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMap[log.userName] }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span>
                                         </div>
@@ -544,7 +592,7 @@
                                 </div>
                             </div>
 
-                            {/* 在線成員 */}
+                            {/* 在線成員 - 功能還原 */}
                             <div className="lg:col-span-2 bg-slate-900/40 border border-white/5 p-4 h-[180px] flex flex-col gap-3 rounded backdrop-blur-sm">
                                 <div className="flex justify-between items-center text-xs font-black text-slate-500 uppercase"><span>在線成員</span><span className="text-xl font-black text-white">{onlineUsers.length}</span></div>
                                 <div className="bg-black/60 border border-slate-800 p-2 flex-1 overflow-y-auto custom-scrollbar text-[11px] rounded flex flex-wrap gap-2">
@@ -568,12 +616,12 @@
                                 </div>
                             </div>
 
-                            {/* 成員統計看板 */}
+                            {/* 成員統計 */}
                             <div className="lg:col-span-4 bg-[#0d1117]/80 p-4 h-[180px] border border-white/10 relative flex flex-col rounded shadow-2xl">
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400"></div>
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                                     <div className="flex items-center gap-3">
-                                        <span>成員統計 <span className="text-[9px] text-cyan-500/50 normal-case">(點擊數值飾選)</span></span>
+                                        <span>成員統計</span>
                                         <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
                                         <Icon name="download" className="w-3.5 h-3.5 hover:text-white" onClick={handleExportData} />
                                         <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" onClick={() => importInputRef.current.click()} />
@@ -586,16 +634,16 @@
                                             {allMembersStats.map(m => (
                                                 <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
                                                     <td className="py-1" style={{ color: m.color }}>{m.name}</td>
-                                                    <td className={`text-slate-500 px-1 cursor-pointer hover:bg-white/10 rounded ${activeFilter?.userName === m.name && activeFilter?.statusId === 'unbought' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'unbought')}>
+                                                    <td className={`px-1 cursor-pointer text-slate-500 ${activeFilter?.userName === m.name && activeFilter?.statusId === 'unbought' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'unbought')}>
                                                         {statusLabels.unbought} {m.stats.unbought}
                                                     </td>
-                                                    <td className={`text-cyan-600 px-1 cursor-pointer hover:bg-white/10 rounded ${activeFilter?.userName === m.name && activeFilter?.statusId === 'bought' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'bought')}>
+                                                    <td className={`px-1 cursor-pointer text-cyan-600 ${activeFilter?.userName === m.name && activeFilter?.statusId === 'bought' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'bought')}>
                                                         {statusLabels.bought} {m.stats.bought}
                                                     </td>
-                                                    <td className={`text-fuchsia-600 px-1 cursor-pointer hover:bg-white/10 rounded ${activeFilter?.userName === m.name && activeFilter?.statusId === 'playing' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'playing')}>
+                                                    <td className={`px-1 cursor-pointer text-fuchsia-600 ${activeFilter?.userName === m.name && activeFilter?.statusId === 'playing' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'playing')}>
                                                         {statusLabels.playing} {m.stats.playing}
                                                     </td>
-                                                    <td className={`text-lime-600 px-1 cursor-pointer hover:bg-white/10 rounded ${activeFilter?.userName === m.name && activeFilter?.statusId === 'completed' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'completed')}>
+                                                    <td className={`px-1 cursor-pointer text-lime-600 ${activeFilter?.userName === m.name && activeFilter?.statusId === 'completed' ? 'filter-active' : ''}`} onClick={() => handleSetFilter(m.name, 'completed')}>
                                                         {statusLabels.completed} {m.stats.completed}
                                                     </td>
                                                 </tr>
@@ -606,30 +654,22 @@
                             </div>
                         </div>
 
-                        {/* 主表格區域 */}
+                        {/* 表格區域 */}
                         <div className="mb-24 shadow-2xl rounded overflow-hidden">
                             <div className="flex items-stretch bg-slate-900 border-x border-t border-slate-700">
                                 <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0]}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
-                                
                                 <div className="flex-grow flex items-center px-6 relative">
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
                                     <div className="flex-grow flex items-center gap-4">
-                                        <input 
-                                            type="text" 
-                                            placeholder="搜尋遊戲名稱..." 
-                                            className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" 
-                                            value={searchQuery} 
-                                            onChange={(e) => setSearchQuery(e.target.value)} 
-                                        />
+                                        <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                         {activeFilter && (
                                             <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs animate-pulse">
-                                                <span className="font-black text-cyan-400">飾選中: {activeFilter.userName} - {statusLabels[activeFilter.statusId]}</span>
+                                                <span className="font-black text-cyan-400">正在飾選: {activeFilter.userName} - {statusLabels[activeFilter.statusId]}</span>
                                                 <button onClick={() => setActiveFilter(null)} className="text-white hover:text-red-500"><Icon name="x-circle" className="w-4 h-4" /></button>
                                             </div>
                                         )}
                                     </div>
                                 </div>
-
                                 <div className="px-6 flex items-center border-l border-slate-800">
                                     <button onClick={() => setIsEditLocked(!isEditLocked)} className={`px-4 py-1.5 rounded-full font-black text-xs border transition-all ${isEditLocked ? 'text-red-400 border-red-500/50 bg-red-950/20' : 'text-green-400 border-green-500/50 bg-green-950/20'}`}><Icon name={isEditLocked ? "lock" : "unlock"} className="w-3 h-3 mr-1 inline" />{isEditLocked ? "鎖定" : "解鎖"}</button>
                                 </div>
@@ -674,7 +714,7 @@
                                                     onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
                                                     onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                     onStatusUpdate={handleStatusUpdate}
-                                                    onDelete={async (game) => { if(confirm(`確定刪除 ${game.name}?`)) await db.collection(paths.games).doc(game.id).delete(); }}
+                                                    onDelete={handleDeleteGame}
                                                     onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
                                                 />
                                                 {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map(child => (
@@ -684,48 +724,41 @@
                                                         statusOptions={statusOptions}
                                                         onOpenEdit={openEditModal} onUpdateOrder={()=>{}} onStatusUpdate={handleStatusUpdate}
                                                         onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
-                                                        onDelete={async (game) => { if(confirm(`確定刪除 ${game.name}?`)) await db.collection(paths.games).doc(game.id).delete(); }}
+                                                        onDelete={handleDeleteGame}
                                                         onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                         onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
                                                     />
                                                 ))}
                                             </React.Fragment>
                                         ))}
-                                        {!isLoadingGames && hierarchy.roots.length === 0 && (
-                                            <tr><td colSpan="8" className="py-32 text-center opacity-10 font-black text-3xl italic tracking-tighter uppercase">No Games Match Filter</td></tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
 
-                    {/* 自訂狀態彈窗 */}
+                    {/* 自訂狀態設定 */}
                     {isStatusSettingsOpen && (
                         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-md p-8 rounded shadow-2xl">
-                                <h3 className="text-2xl font-black mb-6 italic text-cyan-400">狀態顯示文字設定</h3>
+                                <h3 className="text-2xl font-black mb-6 italic text-cyan-400">狀態標籤文字</h3>
                                 <form onSubmit={handleUpdateLabels} className="space-y-4">
                                     {['unbought', 'bought', 'playing', 'completed'].map(id => (
                                         <div key={id}>
-                                            <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">狀態 ID: {id}</label>
-                                            <input 
-                                                className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold"
-                                                value={statusLabels[id]}
-                                                onChange={e => setStatusLabels({...statusLabels, [id]: e.target.value})}
-                                            />
+                                            <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">ID: {id}</label>
+                                            <input className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold" value={statusLabels[id]} onChange={e => setStatusLabels({...statusLabels, [id]: e.target.value})} />
                                         </div>
                                     ))}
                                     <div className="flex gap-4 mt-8">
                                         <button type="button" onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded">取消</button>
-                                        <button type="submit" className="flex-1 py-3 bg-cyan-600 text-black font-black rounded hover:bg-cyan-500">儲存</button>
+                                        <button type="submit" className="flex-1 py-3 bg-cyan-600 text-black font-black rounded">儲存</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* 錄入彈窗 */}
+                    {/* 修改/錄入彈窗 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
                             <div className="bg-[#0b0e14] border-t-2 border-cyan-400 w-full max-w-2xl p-10 relative shadow-2xl rounded-sm">
@@ -736,7 +769,7 @@
                                 <form onSubmit={handleSaveGame} className="grid grid-cols-1 md:grid-cols-3 gap-10">
                                     <div className="md:col-span-1">
                                         <div onClick={()=>fileInputRef.current.click()} className="aspect-[3/4] bg-slate-950 border border-slate-800 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-cyan-400 transition-colors">
-                                            {formData.cover ? <img src={formData.cover} className="w-full h-full object-contain" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500"><Icon name="upload" className="w-10 h-10" /><span className="text-[10px] font-black uppercase tracking-widest text-center">貼上封面 (Ctrl+V)</span></div>}
+                                            {formData.cover ? <img src={formData.cover} className="w-full h-full object-contain" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500"><Icon name="upload" className="w-10 h-10" /><span className="text-[10px] font-black uppercase tracking-widest text-center px-2">貼上封面 (Ctrl+V)</span></div>}
                                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{
                                                 const file = e.target.files[0];
                                                 if(file) {
@@ -773,7 +806,7 @@
                         </div>
                     )}
 
-                    {/* 添加人員彈窗 */}
+                    {/* 添加人員 */}
                     {newPersonnelInput.gameId && (
                         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
