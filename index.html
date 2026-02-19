@@ -11,9 +11,9 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- Firebase SDK (Compat) -->
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-app-compat.js"></script>
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-auth-compat.js"></script>
-    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/11.0.2/firebase-firestore-compat.js"></script>
+    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     
     <style>
         @import url('https://gs.jurieo.com/gemini/fonts-googleapis/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
@@ -25,11 +25,27 @@
             margin: 0;
             overflow-x: hidden;
             font-size: 16px;
+            user-select: none;
+            -webkit-user-select: none;
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
         }
+
+        input, textarea, select, .selectable-cell {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
         
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #0d1117;
+            will-change: scroll-position;
+        }
+
         .animate-text-shimmer {
             background: linear-gradient(to right, #818cf8, #22d3ee, #fb7185, #818cf8);
             background-size: 200% auto;
@@ -39,6 +55,7 @@
             animation: shimmer 4s linear infinite;
         }
         @keyframes shimmer { to { background-position: 200% center; } }
+        
         .dragging {
             opacity: 0.5;
             background: rgba(79, 70, 229, 0.2) !important;
@@ -51,7 +68,6 @@
             -webkit-appearance: none;
             margin: 0;
         }
-        .selectable-cell { user-select: text; }
         .dlc-indent {
             padding-left: 2.5rem !important;
             position: relative;
@@ -68,52 +84,56 @@
             background: rgba(34, 211, 238, 0.1);
             color: #22d3ee;
         }
-
-        .clickable-cat {
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .clickable-cat:hover {
-            color: #22d3ee !important;
-            border-color: rgba(34, 211, 238, 0.5) !important;
+        
+        .filter-active {
+            box-shadow: 0 0 15px currentColor;
+            transform: scale(1.05);
+            background: rgba(255,255,255,0.08);
+            border-radius: 4px;
         }
 
-        .stat-item {
-            cursor: pointer;
-            transition: all 0.2s;
-            padding: 2px 4px;
-            border-radius: 2px;
+        .modal-field-container {
+            display: grid;
+            grid-template-cols: 70px 1fr;
+            align-items: center;
+            gap: 0.5rem;
         }
-        .stat-item:hover {
-            background: rgba(255, 255, 255, 0.1);
+        .modal-input-base {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 2px solid #1e293b;
+            padding: 0.5rem 0.75rem;
+            transition: all 0.3s ease;
         }
-        .stat-item.active-filter {
-            background: #22d3ee;
-            color: #000 !important;
+        .modal-input-base:focus {
+            border-bottom-color: #22d3ee;
+            background: rgba(0,0,0,0.6);
+            outline: none;
+        }
+
+        tr {
+            backface-visibility: hidden;
+            transform: translateZ(0);
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
+        const { useState, useEffect, useRef, useMemo, memo, useCallback, useDeferredValue } = React;
         
-        // --- 靜態配置初始值 ---
-        const INITIAL_STATUS_OPTIONS = [
-            { id: 'unbought', label: '願望清單', color: 'text-white border-slate-500 bg-slate-700/30' },
-            { id: 'bought', label: '已購買', color: 'text-cyan-300 border-cyan-500 bg-cyan-950/40' },
-            { id: 'playing', label: '遊玩中', color: 'text-fuchsia-300 border-fuchsia-500 bg-fuchsia-950/40' },
-            { id: 'completed', label: '已完成', color: 'text-lime-300 border-lime-500 bg-lime-950/40' },
-        ];
+        const isClient = typeof window !== 'undefined';
+        const APP_ID = 'steam-stats-v4';
 
-        // --- 工具函數 ---
         const safeGetStorage = (key, fallback) => {
+            if (!isClient) return fallback;
             try {
                 const item = localStorage.getItem(key);
                 return item ? JSON.parse(item) : fallback;
             } catch (e) { return fallback; }
         };
         const safeSetStorage = (key, value) => {
+            if (!isClient) return;
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
         const compressImage = (dataUrl, maxWidth = 400) => {
@@ -134,23 +154,30 @@
                 img.src = dataUrl;
             });
         };
+        
         const Icon = memo(({ name, className, onClick, title }) => (
             <span 
-                onClick={(e) => { if(onClick) { e.stopPropagation(); onClick(e); } }} 
+                onClick={(e) => { 
+                    if(onClick) { 
+                        e.preventDefault();
+                        e.stopPropagation(); 
+                        onClick(e); 
+                    } 
+                }} 
                 className={`inline-flex items-center justify-center cursor-pointer ${className || ''}`}
                 title={title}
             >
-                <i data-lucide={name} className="w-full h-full"></i>
+                <i data-lucide={name} className="w-full h-full pointer-events-none"></i>
             </span>
         ));
+
         const formatDate = (ts) => { 
             if (!ts) return "LIVE"; 
             const date = new Date(ts.toMillis()); 
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
-        // --- Firebase 配置 ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        const firebaseConfig = {
             apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
             authDomain: "cloud-714ce.firebaseapp.com",
             projectId: "cloud-714ce",
@@ -159,319 +186,182 @@
             appId: "1:793151737559:web:7e7def7c8012bc91542a92"
         };
 
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
+        if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = isClient ? firebase.firestore() : null;
+        const auth = isClient ? firebase.auth() : null;
 
-        // --- 子組件：GameRow ---
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
             personnel, nameColorMap, currencies, statusOptions,
             onToggleGroup, onOpenEdit, onStartDrag, onDrop, 
-            onUpdateOrder, onAddDLC, onNest, onUnnest, onAddPersonnel, onStatusUpdate, onDelete, onRemovePersonnel,
-            onCategoryClick
+            onUpdateOrder, onAddDLC, onNest, onUnnest, onAddPersonnel, onStatusUpdate, onDelete, onRemovePersonnel
         }) => {
             const addedByColor = nameColorMap[g.addedBy] || '#818cf8';
             
             return (
-                <React.Fragment>
-                    <tr 
-                        onDragOver={(e)=>e.preventDefault()} 
-                        onDrop={() => !isEditLocked && !isChild && onDrop(index)}
-                        onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))}
-                        className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
-                        
-                        <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex flex-col items-center gap-2">
-                                {!isEditLocked && !isChild && (
-                                    <div draggable onDragStart={() => onStartDrag(g.id, index)} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
-                                )}
-                                {!isChild && hasChildren && (
-                                    <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
-                                )}
-                            </div>
-                        </td>
-                        <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
-                            {!isChild && (
-                                isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
-                                <input type="number" className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" defaultValue={g.order || 0} onBlur={(e) => onUpdateOrder(g.id, e.target.value)} />
+                <tr 
+                    onDragOver={(e)=>e.preventDefault()} 
+                    onDrop={() => !isEditLocked && !isChild && onDrop(index)}
+                    onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))}
+                    className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
+                    
+                    <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex flex-col items-center gap-2">
+                            {!isEditLocked && !isChild && (
+                                <div draggable onDragStart={() => onStartDrag(g.id, index)} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
                             )}
-                        </td>
-                        <td className="px-4 text-center">
-                            <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
-                        </td>
-                        
-                        <td className="px-4">
-                            <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500">
-                                {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
-                            </div>
-                        </td>
-                        <td className="px-6 py-8 text-center selectable-cell">
-                            <div className="flex flex-col items-center gap-1">
-                                <div className="flex items-center gap-2">
+                            {!isChild && hasChildren && (
+                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
+                            )}
+                        </div>
+                    </td>
+                    <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
+                        {!isChild && (
+                            isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
+                            <input 
+                                key={g.id + '-' + g.order}
+                                type="number" 
+                                className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" 
+                                defaultValue={g.order || 0} 
+                                onBlur={(e) => onUpdateOrder(g.id, e.target.value)} 
+                            />
+                        )}
+                    </td>
+                    <td className="px-4 text-center">
+                        <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                        <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
+                            {g.cover ? <img src={g.cover} className="w-full h-full object-contain" loading="lazy" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
+                        </div>
+                    </td>
+                    <td className="px-6 py-8 text-center selectable-cell">
+                        <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-2">
                                     <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
                                     {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
+                            </div>
+                            {!isEditLocked && (
+                                <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
+                                    {!isChild && (
+                                        <div 
+                                            className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black"
+                                            onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}}
+                                            onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}
+                                        ><Icon name="folder-plus" className="w-3 h-3" /> 放入分組</div>
+                                    )}
+                                    {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
                                 </div>
-                                {g.category && (
-                                    <span 
-                                        onClick={(e) => { e.stopPropagation(); onCategoryClick(g.category); }}
-                                        className="clickable-cat text-[10px] text-cyan-400/60 font-black border border-cyan-400/20 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter"
-                                    >
-                                        {g.category}
-                                    </span>
-                                )}
-                                {!isEditLocked && (
-                                    <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
-                                        {!isChild && (
-                                            <div 
-                                                className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black"
-                                                onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}}
-                                                onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}
-                                            ><Icon name="folder-plus" className="w-3 h-3" /> 放入分組</div>
+                            )}
+                        </div>
+                    </td>
+                    <td className="px-6 text-center font-black text-2xl">
+                        <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
+                    </td>
+                    <td className="px-1" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex items-stretch gap-10 w-fit mx-auto min-h-[40px]">
+                            <div className="flex flex-col gap-1 shrink-0">
+                                {personnel.map(p => (
+                                    <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[380px] shrink-0">
+                                        <span className="font-black truncate w-20 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
+                                        <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
+                                            {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                                        </select>
+                                        {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
+                                            <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
+                                                <select value={p.purchaseCurrency || currencies[0]} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
+                                                    {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                                </select>
+                                                <input type="number" className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" defaultValue={p.purchasePrice || 0} onBlur={(e) => onStatusUpdate(g.id, p.userId, { purchasePrice: e.target.value, userName: p.userName })} />
+                                                <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />
+                                            </div>
+                                        ) : (
+                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
                                         )}
-                                        {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
+                                        {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
+                                            <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
+                                                <select value={p.purchaseCurrency2 || currencies[2] || 'US$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
+                                                    {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                                </select>
+                                                <input type="number" className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" defaultValue={p.purchasePrice2 || 0} onBlur={(e) => onStatusUpdate(g.id, p.userId, { purchasePrice2: e.target.value, userName: p.userName })} />
+                                                <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />
+                                            </div>
+                                        ) : (
+                                            !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: currencies[2]||'US$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
+                                        )}
+                                        <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                     </div>
-                                )}
+                                ))}
+                                {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[380px]">EMPTY MATRIX</div>}
                             </div>
-                        </td>
-                        <td className="px-6 text-center font-black text-2xl">
-                            <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
-                        </td>
-                        <td className="px-1" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex items-stretch gap-10 w-fit mx-auto min-h-[40px]">
-                                <div className="flex flex-col gap-1 shrink-0">
-                                    {personnel.map(p => (
-                                        <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 w-[380px] shrink-0">
-                                            <span className="font-black truncate w-20 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
-                                            
-                                            <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
-                                                {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
-                                            </select>
-                                            
-                                            {/* 價格格子 1 */}
-                                            {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
-                                                    <select value={p.purchaseCurrency || currencies[0]} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <input type="number" className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" defaultValue={p.purchasePrice || 0} onBlur={(e) => onStatusUpdate(g.id, p.userId, { purchasePrice: e.target.value, userName: p.userName })} />
-                                                    <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-
-                                            {/* 價格格子 2 */}
-                                            {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
-                                                    <select value={p.purchaseCurrency2 || currencies[2] || 'US$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <input type="number" className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" defaultValue={p.purchasePrice2 || 0} onBlur={(e) => onStatusUpdate(g.id, p.userId, { purchasePrice2: e.target.value, userName: p.userName })} />
-                                                    <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full ${isEditLocked ? 'hidden' : ''}`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: currencies[2]||'US$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-
-                                            <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
-                                        </div>
-                                    ))}
-                                    {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[380px]">EMPTY MATRIX</div>}
-                                </div>
-                                <button 
-                                    onClick={() => onAddPersonnel(g.id)} 
-                                    className={`w-8 shrink-0 border border-dashed border-slate-800 text-slate-700 hover:text-cyan-500 hover:border-cyan-500/50 flex items-center justify-center transition-all bg-black/20 hover:bg-cyan-500/5 rounded ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-                                    title="添加人員"
-                                >
-                                    <span className="text-xl font-light opacity-50">+</span>
-                                </button>
-                            </div>
-                        </td>
-                        <td className="px-4 text-center">
-                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}><Icon name="trash-2" className="w-5 h-5" /></button>
-                        </td>
-                    </tr>
-                </React.Fragment>
+                            <button 
+                                onClick={() => onAddPersonnel(g.id)} 
+                                className={`w-8 shrink-0 border border-dashed border-slate-800 text-slate-700 hover:text-cyan-500 hover:border-cyan-500/50 flex items-center justify-center transition-all bg-black/20 hover:bg-cyan-500/5 rounded ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                                title="添加人員"
+                            >
+                                <span className="text-xl font-light opacity-50">+</span>
+                            </button>
+                        </div>
+                    </td>
+                    <td className="px-4 text-center">
+                        <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}><Icon name="trash-2" className="w-5 h-5" /></button>
+                    </td>
+                </tr>
             );
         });
 
-        // --- 主應用組件 ---
         function App() {
+            // 1. States & Refs (變數聲明最優先)
             const [user, setUser] = useState(null);
+            const [draggedId, setDraggedId] = useState(null);
+            const [draggedIdx, setDraggedIdx] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
             const [isLoadingLogs, setIsLoadingLogs] = useState(true);
             const [isLoadingGames, setIsLoadingGames] = useState(true);
-            
-            const [userName, setUserName] = useState(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
-            const [userColor, setUserColor] = useState(safeGetStorage('steam_user_color', '#22d3ee'));
+            const [userName, setUserName] = useState('載入中...');
+            const [userColor, setUserColor] = useState('#22d3ee');
             const [isEditingName, setIsEditingName] = useState(false);
-            
             const [games, setGames] = useState([]); 
             const [allUserStatuses, setAllUserStatuses] = useState([]); 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingId, setEditingId] = useState(null); 
-            const [formData, setFormData] = useState({ name: '', addedBy: '', price: '', currency: 'HK$', url: '', cover: null, parentId: '', category: '' });
+            const [formData, setFormData] = useState({ name: '', addedBy: '', price: '0', currency: 'HK$', url: '', cover: null, parentId: '' });
             const [notification, setNotification] = useState(null);
             const [searchQuery, setSearchQuery] = useState(''); 
-            const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
-            const [draggedId, setDraggedId] = useState(null);
-            const [draggedIdx, setDraggedIdx] = useState(null);
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
-            
-            const [statsMembers, setStatsMembers] = useState(safeGetStorage(`steam_stats_members_${appId}`, []));
+            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥"]);
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
-            const [currencies, setCurrencies] = useState(safeGetStorage(`steam_currencies_${appId}`, ["HK$", "NT$", "US$", "JP¥", "CN¥"]));
-            const [newCurrencyInput, setNewCurrencyInput] = useState('');
-            
-            const [categories, setCategories] = useState([]);
-            const [selectedCategory, setSelectedCategory] = useState(null);
-            const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-            const [newCategoryName, setNewCategoryName] = useState('');
-
-            // --- 修復邏輯：人員篩選與狀態自定義 ---
-            const [statusOptions, setStatusOptions] = useState(INITIAL_STATUS_OPTIONS);
-            const [activeStatusFilter, setActiveStatusFilter] = useState({ userName: null, statusId: null });
+            const [activeFilter, setActiveFilter] = useState(null);
+            const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
+            const [deleteConfirm, setDeleteConfirm] = useState(null); // { title, action }
+            const [statusLabels, setStatusLabels] = useState([
+                { id: 'unbought', label: '願望清單', color: '#ffffff' },
+                { id: 'bought', label: '已購買', color: '#67e8f9' },
+                { id: 'playing', label: '遊玩中', color: '#f0abfc' },
+                { id: 'completed', label: '已完成', color: '#bef264' }
+            ]);
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
-            const searchRef = useRef(null);
+            const deferredSearchQuery = useDeferredValue(searchQuery);
 
             const paths = useMemo(() => ({
-                presence: `artifacts/${appId}/public/data/presence`,
-                logs: `artifacts/${appId}/public/data/activity_logs`,
-                games: `artifacts/${appId}/public/data/games`,
-                statuses: `artifacts/${appId}/public/data/user_statuses`,
-                settings: `artifacts/${appId}/public/data/settings`
+                presence: `artifacts/${APP_ID}/public/data/presence`,
+                logs: `artifacts/${APP_ID}/public/data/activity_logs`,
+                games: `artifacts/${APP_ID}/public/data/games`,
+                statuses: `artifacts/${APP_ID}/public/data/user_statuses`,
+                settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
-            const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
+            // 2. Memos (計算屬性)
+            const statusOptions = useMemo(() => {
+                return statusLabels.map(l => ({ id: l.id, label: l.label, color: `text-white border-slate-500 bg-slate-700/30` }));
+            }, [statusLabels]);
 
-            const closeModal = useCallback(() => { 
-                setFormData({ name: '', addedBy: '', price: '', currency: currencies[0], url: '', cover: null, parentId: '', category: '' }); 
-                setEditingId(null); 
-                setIsModalOpen(false); 
-            }, [currencies]);
-
-            const logActivity = useCallback((action, gameName) => { if(db && user) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }); }, [userName, user, paths]);
-
-            const renormalizeLayer = async (parentId = "") => {
-                const siblings = games.filter(g => (g.parentId || "") === parentId);
-                const sorted = [...siblings].sort((a, b) => {
-                    const ordA = parseInt(a.order) || 0;
-                    const ordB = parseInt(b.order) || 0;
-                    if (ordA !== ordB) return ordA - ordB;
-                    return (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0);
-                });
-                const batch = db.batch();
-                sorted.forEach((g, idx) => {
-                    const targetOrder = idx + 1;
-                    if (parseInt(g.order) !== targetOrder) {
-                        batch.update(db.collection(paths.games).doc(g.id), { order: targetOrder });
-                    }
-                });
-                await batch.commit();
-            };
-
-            const handleToggleFilter = (cat) => {
-                setSelectedCategory(prev => prev === cat ? null : cat);
-                setActiveStatusFilter({ userName: null, statusId: null });
-            };
-
-            const handleToggleStatusFilter = (userName, statusId) => {
-                setActiveStatusFilter(prev => {
-                    if (prev.userName === userName && prev.statusId === statusId) return { userName: null, statusId: null };
-                    return { userName, statusId };
-                });
-                setSelectedCategory(null);
-            };
-
-            const handleSaveStatusLabel = async (statusId, newLabel) => {
-                const next = statusOptions.map(opt => opt.id === statusId ? { ...opt, label: newLabel } : opt);
-                setStatusOptions(next);
-                await db.collection(paths.settings).doc('global').set({ statusOptions: next }, { merge: true });
-                showNotify("狀態名稱已同步更新");
-            };
-
-            const handleAddCategory = async () => {
-                const name = newCategoryName.trim();
-                if (!name || categories.includes(name)) return;
-                const next = [...categories, name];
-                setCategories(next);
-                setNewCategoryName('');
-                await db.collection(paths.settings).doc('global').set({ categories: next }, { merge: true });
-                showNotify(`已新增分類 ${name}`);
-            };
-
-            const handleRemoveCategory = async (name) => {
-                if (!confirm(`確定刪除分類「${name}」？遊戲關聯將被移除。`)) return;
-                const next = categories.filter(c => c !== name);
-                setCategories(next);
-                const batch = db.batch();
-                batch.update(db.collection(paths.settings).doc('global'), { categories: next });
-                games.filter(g => g.category === name).forEach(g => {
-                    batch.update(db.collection(paths.games).doc(g.id), { category: "" });
-                });
-                await batch.commit();
-                if (selectedCategory === name) setSelectedCategory(null);
-                showNotify("分類已移除");
-            };
-
-            const handleRenameCategory = async (oldName) => {
-                const newName = prompt("請輸入新的分類名稱:", oldName);
-                if (!newName || newName === oldName || categories.includes(newName)) return;
-                const next = categories.map(c => c === oldName ? newName : c);
-                setCategories(next);
-                const batch = db.batch();
-                batch.update(db.collection(paths.settings).doc('global'), { categories: next });
-                games.filter(g => g.category === oldName).forEach(g => {
-                    batch.update(db.collection(paths.games).doc(g.id), { category: newName });
-                });
-                await batch.commit();
-                if (selectedCategory === oldName) setSelectedCategory(newName);
-                showNotify("分類名稱已更新");
-            };
-
-            // --- 數據導出入 ---
-            const handleExportData = useCallback(() => {
-                const data = { version: "5.4", appId, games, userStatuses: allUserStatuses, statsMembers, currencies, categories, statusOptions };
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_matrix_backup_${Date.now()}.json`; a.click();
-                showNotify("數據備份已導出");
-            }, [games, allUserStatuses, statsMembers, currencies, categories, statusOptions, appId, showNotify]);
-
-            const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (ev) => {
-                    try {
-                        const data = JSON.parse(ev.target.result);
-                        if (data.games) { for (const g of data.games) { const { id, ...gd } = g; await db.collection(paths.games).doc(id).set(gd, { merge: true }); } }
-                        if (data.userStatuses) {
-                            for (const s of data.userStatuses) {
-                                const docId = s.id || `${s.gameId}_${s.userId}`;
-                                const { id, ...sd } = s;
-                                await db.collection(paths.statuses).doc(docId).set(sd, { merge: true });
-                            }
-                        }
-                        if (data.statsMembers) { setStatsMembers(data.statsMembers); safeSetStorage(`steam_stats_members_${appId}`, data.statsMembers); }
-                        const settingsUpdate = {};
-                        if (data.currencies) settingsUpdate.currencies = data.currencies;
-                        if (data.categories) settingsUpdate.categories = data.categories;
-                        if (data.statusOptions) settingsUpdate.statusOptions = data.statusOptions;
-                        if (Object.keys(settingsUpdate).length > 0) await db.collection(paths.settings).doc('global').set(settingsUpdate, { merge: true });
-                        showNotify("備份已成功還原");
-                    } catch (err) { showNotify("導入失敗：格式不符"); }
-                };
-                reader.readAsText(file);
-            }, [paths, appId, showNotify]);
-
-            // --- 初始化與監聽 ---
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -479,164 +369,327 @@
                 return Array.from(names).filter(Boolean).sort();
             }, [allUserStatuses, games]);
 
-            const allAvailableMembers = useMemo(() => [...tableMemberNames], [tableMemberNames]);
+            const nameColorMap = useMemo(() => {
+                const map = {};
+                onlineUsers.forEach(u => map[u.name] = u.color);
+                allUserStatuses.forEach(s => { if (s.userColor && !map[s.userName]) map[s.userName] = s.userColor; });
+                map[userName] = userColor;
+                return map;
+            }, [onlineUsers, allUserStatuses, userName, userColor]);
+
+            const gamePersonnelMap = useMemo(() => {
+                const map = {};
+                allUserStatuses.forEach(s => { if (!map[s.gameId]) map[s.gameId] = []; map[s.gameId].push(s); });
+                return map;
+            }, [allUserStatuses]);
 
             const allMembersStats = useMemo(() => {
-                const nameColorMapInternal = {};
-                onlineUsers.forEach(u => nameColorMapInternal[u.name] = u.color);
-                allUserStatuses.forEach(s => { if (s.userColor && !nameColorMapInternal[s.userName]) nameColorMapInternal[s.userName] = s.userColor; });
-                nameColorMapInternal[userName] = userColor;
-
                 return tableMemberNames.map(name => {
                     const userStatuses = allUserStatuses.filter(s => s.userName === name);
                     const stats = {};
-                    statusOptions.forEach(opt => { stats[opt.id] = userStatuses.filter(s => s.status === opt.id).length; });
-                    return { name, color: nameColorMapInternal[name] || '#ffffff', stats };
+                    statusLabels.forEach(l => { stats[l.id] = userStatuses.filter(s => s.status === l.id).length; });
+                    return { name, color: nameColorMap[name] || '#ffffff', stats };
                 });
-            }, [tableMemberNames, allUserStatuses, onlineUsers, userName, userColor, statusOptions]);
-
-            useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) await auth.signInWithCustomToken(token); else await auth.signInAnonymously();
-                    } catch (e) {}
-                };
-                initAuth();
-                const unsubAuth = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsubAuth();
-            }, []);
-
-            useEffect(() => {
-                if (!user) return;
-                const unsubPresence = db.collection(paths.presence).onSnapshot(snap => {
-                    const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                    setOnlineUsers(list);
-                });
-                const unsubLogs = db.collection(paths.logs).onSnapshot(snap => {
-                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                    setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                }, () => setIsLoadingLogs(false));
-                const unsubGames = db.collection(paths.games).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                    setGames(data); setIsLoadingGames(false);
-                }, () => setIsLoadingGames(false));
-                const unsubStatuses = db.collection(paths.statuses).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                    setAllUserStatuses(data);
-                });
-                const unsubSettings = db.collection(paths.settings).doc('global').onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        if (data.currencies) setCurrencies(data.currencies);
-                        if (data.categories) setCategories(data.categories);
-                        if (data.statusOptions) setStatusOptions(data.statusOptions);
-                    }
-                });
-                return () => { unsubPresence(); unsubLogs(); unsubGames(); unsubStatuses(); unsubSettings(); };
-            }, [user, paths]);
-
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            }, [games.length, allUserStatuses.length, expandedGroups.size, isLoadingGames, isModalOpen, currencies.length, isEditLocked, categories.length, isCategoryModalOpen, selectedCategory, activeStatusFilter]);
+            }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
-                if (searchQuery.trim()) {
-                    const q = searchQuery.toLowerCase();
+                if (activeFilter) {
+                    const matchedGameIds = allUserStatuses.filter(s => s.userName === activeFilter.userName && s.status === activeFilter.statusId).map(s => s.gameId);
+                    list = list.filter(g => matchedGameIds.includes(g.id));
+                }
+                if (deferredSearchQuery.trim()) {
+                    const q = deferredSearchQuery.toLowerCase();
                     list = list.filter(g => (g.name || "").toLowerCase().includes(q));
                 }
-                if (selectedCategory) list = list.filter(g => g.category === selectedCategory);
                 
-                // --- 核心邏輯：狀態篩選 ---
-                if (activeStatusFilter.userName && activeStatusFilter.statusId) {
-                    list = list.filter(g => {
-                        const s = allUserStatuses.find(stat => stat.gameId === g.id && stat.userName === activeStatusFilter.userName);
-                        return s && s.status === activeStatusFilter.statusId;
-                    });
-                }
-
                 list.sort((a, b) => {
-                    let valA = a[sortConfig.key]; let valB = b[sortConfig.key];
-                    if (sortConfig.key === 'order') { valA = parseInt(valA)||0; valB = parseInt(valB)||0; }
-                    else { valA = (valA||"").toString().toLowerCase(); valB = (valB||"").toString().toLowerCase(); }
-                    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-                    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-                    return (a.id < b.id) ? -1 : 1;
+                    const valA = parseInt(a.order) || 0;
+                    const valB = parseInt(b.order) || 0;
+                    return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
                 });
+
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
                 list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
                 return { roots, children };
-            }, [games, searchQuery, sortConfig, selectedCategory, activeStatusFilter, allUserStatuses]);
+            }, [games, deferredSearchQuery, activeFilter, allUserStatuses, sortConfig]);
 
-            const handleSaveGame = useCallback(async (e) => {
-                if (e) { e.preventDefault(); e.stopPropagation(); }
-                if (!formData.name.trim() || !user) return;
+            // 3. 事件回調
+            const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
+
+            const handleUpdateOrder = useCallback(async (targetId, newValue) => {
+                const newOrderValue = parseInt(newValue);
+                if (isNaN(newOrderValue) || !db) return;
+
                 try {
-                    const finalData = { ...formData, addedBy: formData.addedBy || userName };
-                    if (editingId) await db.collection(paths.games).doc(editingId).update(finalData); 
-                    else { 
-                        const siblings = games.filter(g => (g.parentId || "") === (formData.parentId || ""));
-                        const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
-                        await db.collection(paths.games).add({ ...finalData, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
-                    }
-                    showNotify("同步成功");
-                    closeModal();
-                } catch (err) { showNotify("同步失敗"); }
-            }, [formData, user, editingId, games, userName, paths, showNotify, closeModal]);
+                    const roots = games.filter(g => !g.parentId);
+                    const targetGame = roots.find(g => g.id === targetId);
+                    if (!targetGame) return;
+
+                    const currentSorted = [...roots].sort((a, b) => (parseInt(a.order) || 0) - (parseInt(b.order) || 0));
+                    const remaining = currentSorted.filter(g => g.id !== targetId);
+                    const insertIndex = Math.max(0, Math.min(newOrderValue - 1, remaining.length));
+                    remaining.splice(insertIndex, 0, targetGame);
+
+                    const batch = db.batch();
+                    remaining.forEach((game, idx) => {
+                        const finalOrder = idx + 1;
+                        if (parseInt(game.order) !== finalOrder) {
+                            batch.update(db.collection(paths.games).doc(game.id), { order: finalOrder });
+                        }
+                    });
+
+                    await batch.commit();
+                    showNotify(`編號校準完成`);
+                } catch (e) {
+                    showNotify("編號更新失敗");
+                }
+            }, [db, games, paths, showNotify]);
+
+            const logActivity = useCallback((action, gameName) => { 
+                if(isClient && db && user) {
+                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+                }
+            }, [userName, user, paths]);
+
+            const handleToggleGroup = useCallback((id) => {
+                setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
+            }, []);
+
+            const handleSetFilter = useCallback((name, sid) => {
+                setActiveFilter(prev => {
+                    if (prev?.userName === name && prev?.statusId === sid) return null;
+                    const labelObj = statusLabels.find(l => l.id === sid);
+                    showNotify(`飾選：${name} - ${labelObj?.label || sid}`);
+                    return { userName: name, statusId: sid };
+                });
+            }, [statusLabels, showNotify]);
+
+            const closeModal = useCallback(() => { 
+                setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); 
+            }, [currencies]);
+
+            const openEditModal = useCallback((g) => { 
+                setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); 
+            }, [currencies]);
 
             const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
-                if (!user) return;
+                if (!isClient || !user || !db) return;
                 const docId = `${gameId}_${targetUserId}`;
                 if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
             }, [user, userColor, userName, paths]);
 
-            const handleDeleteGame = useCallback(async (game) => {
-                if (!user || !confirm(`確定刪除 ${game.name}？`)) return;
-                const pId = game.parentId || "";
-                await db.collection(paths.games).doc(game.id).delete();
-                setTimeout(() => renormalizeLayer(pId), 500); 
-                showNotify("已刪除");
-            }, [user, games, paths, showNotify]);
+            const handleUpdateLabels = useCallback(async (e) => {
+                if (e) e.preventDefault();
+                if (!db) return;
+                try {
+                    await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
+                    setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
+                } catch (err) { showNotify("儲存失敗"); }
+            }, [statusLabels, paths, showNotify]);
 
-            const openEditModal = useCallback((g) => { 
-                setEditingId(g.id); 
-                setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'', category: g.category||'' }); 
-                setIsModalOpen(true); 
-            }, [currencies]);
+            const handleSaveGame = useCallback(async (e) => {
+                if (e) e.preventDefault();
+                if (!formData.name.trim() || !user || !db) return;
+                try {
+                    const finalData = { ...formData, addedBy: formData.addedBy || userName };
+                    if (editingId) { 
+                        await db.collection(paths.games).doc(editingId).update(finalData); 
+                        logActivity("修改數據", finalData.name); 
+                    } else { 
+                        const siblings = games.filter(g => (g.parentId || "") === (formData.parentId || ""));
+                        const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
+                        await db.collection(paths.games).add({ ...finalData, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
+                        logActivity("錄入", finalData.name); 
+                    }
+                    showNotify("同步成功"); closeModal();
+                } catch (err) { showNotify("同步失敗"); }
+            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
+
+            const handleDeleteGame = useCallback(async (game) => {
+                if(!db) return;
+                setDeleteConfirm({
+                    title: `確定從矩陣中抹除 [${game.name}] ?`,
+                    action: async () => {
+                        try {
+                            await db.collection(paths.games).doc(game.id).delete();
+                            logActivity("刪除", game.name);
+                            showNotify("已刪除");
+                            setDeleteConfirm(null);
+                        } catch (e) { showNotify("刪除失敗"); }
+                    }
+                });
+            }, [db, paths, logActivity, showNotify]);
+
+            const handleNestGame = useCallback(async (childId, parentId) => {
+                if (isEditLocked || !childId || childId === parentId || !db) return;
+                try {
+                    await db.collection(paths.games).doc(childId).update({ parentId });
+                    showNotify("已放入分組");
+                } catch (e) { showNotify("分組失敗"); }
+            }, [isEditLocked, db, paths, showNotify]);
+
+            const handleExportData = useCallback(() => {
+                const backup = { version: "6.5", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
+            }, [games, allUserStatuses, statusLabels, currencies]);
+
+            const handleImportData = useCallback((e) => {
+                const file = e.target.files[0]; if (!file || !db) return;
+                const reader = new FileReader();
+                reader.onload = async (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        if (data.games) {
+                            for (const g of data.games) {
+                                const { id, ...gd } = g;
+                                await db.collection(paths.games).doc(id || undefined).set(gd, { merge: true });
+                            }
+                        }
+                        showNotify("導入完成");
+                    } catch (err) { showNotify("導入失敗"); }
+                };
+                reader.readAsText(file);
+            }, [db, paths, showNotify]);
+
+            const handleAddPersonnel = useCallback(async (gameId) => {
+                const name = newPersonnelInput.name.trim(); 
+                if (!name || name === "_manual_" || !db) return;
+                const targetUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                const defaultSid = statusLabels[0]?.id || 'unbought';
+                await handleStatusUpdate(gameId, targetUserId, { userName: name, userColor: nameColorMap[name] || '#fff', status: defaultSid, purchasePrice: '0', purchaseCurrency: currencies[0] });
+                setNewPersonnelInput({ gameId: null, name: '' });
+            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels]);
+
+            const addNewStatusGroup = () => {
+                const newId = `status_${Date.now()}`;
+                setStatusLabels([...statusLabels, { id: newId, label: '新分組', color: '#ffffff' }]);
+            };
+
+            const removeStatusGroup = (id) => {
+                const label = statusLabels.find(l => l.id === id)?.label;
+                setDeleteConfirm({
+                    title: `確定刪除分組標籤 [${label}] ?`,
+                    action: () => {
+                        setStatusLabels(prev => prev.filter(item => item.id !== id));
+                        setDeleteConfirm(null);
+                    }
+                });
+            };
+
+            // 4. Effects
+            useEffect(() => {
+                if (isClient) {
+                    setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
+                    setUserColor(safeGetStorage('steam_user_color', '#22d3ee'));
+                }
+            }, []);
+
+            useEffect(() => {
+                if (!isClient || !auth) return;
+                const initAuth = async () => { try { await auth.signInAnonymously(); } catch (e) {} };
+                initAuth();
+                const unsub = auth.onAuthStateChanged(u => setUser(u));
+                return () => unsub();
+            }, []);
+
+            useEffect(() => {
+                if (!isClient || !user || !db) return;
+                const updatePresence = () => {
+                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                };
+                updatePresence();
+                const heartbeat = setInterval(updatePresence, 30000);
+                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
+                    const list = []; const now = Date.now();
+                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                    setOnlineUsers(list);
+                });
+                const unsubL = db.collection(paths.logs).onSnapshot(snap => {
+                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                    setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
+                });
+                const unsubG = db.collection(paths.games).onSnapshot(snap => {
+                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                    setGames(data); setIsLoadingGames(false);
+                });
+                const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
+                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                    setAllUserStatuses(data);
+                });
+                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
+                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); });
+                return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
+            }, [user, userName, userColor, paths]);
+
+            useEffect(() => {
+                if (!isClient && !isModalOpen) return;
+                const handlePaste = async (event) => {
+                    const items = event.clipboardData?.items;
+                    if (!items) return;
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf("image") !== -1) {
+                            const blob = items[i].getAsFile();
+                            if (!blob) continue;
+                            const reader = new FileReader();
+                            reader.onload = async (e) => {
+                                try {
+                                    const compressed = await compressImage(e.target.result);
+                                    setFormData(prev => ({ ...prev, cover: compressed }));
+                                    showNotify("封面已貼上");
+                                } catch (err) { showNotify("圖片壓縮失敗"); }
+                            };
+                            reader.readAsDataURL(blob);
+                            break; 
+                        }
+                    }
+                };
+                window.addEventListener('paste', handlePaste);
+                return () => window.removeEventListener('paste', handlePaste);
+            }, [isModalOpen, showNotify]);
+
+            useEffect(() => {
+                if (isClient && window.lucide) {
+                    try { window.lucide.createIcons(); } catch (e) {}
+                }
+            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length, deleteConfirm]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
                     {notification && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-cyan-500 text-black font-black px-6 py-2 rounded-full border-2 border-white shadow-2xl">{notification}</div>}
+                    
                     <div className="max-w-[1600px] mx-auto">
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.5</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v4.99</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
                         
                         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 mb-8">
                             <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 p-4 h-[180px] overflow-hidden flex flex-col rounded shadow-inner">
-                                <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs uppercase tracking-widest"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
+                                <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
-                                    {isLoadingLogs ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
+                                    {isLoadingLogs ? <div className="animate-pulse italic">同步日誌中...</div> : activityLogs.map(log => (
                                         <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMap[log.userName] }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
                                     ))}
+                                    {!isLoadingLogs && activityLogs.length === 0 && <div className="italic opacity-30">NO LOG DATA</div>}
                                 </div>
                             </div>
                             <div className="lg:col-span-2 bg-slate-900/40 border border-white/5 p-4 h-[180px] flex flex-col gap-3 rounded backdrop-blur-sm">
                                 <div className="flex justify-between items-center text-xs font-black text-slate-500 uppercase"><span>在線成員</span><span className="text-xl font-black text-white">{onlineUsers.length}</span></div>
-                                <div className="bg-black/60 border border-slate-800 p-2 flex-1 overflow-y-auto custom-scrollbar text-[11px] rounded flex flex-wrap gap-2">{onlineUsers.map(u => (<span key={u.uid} style={{ color: u.color }} className="font-bold">● {u.name}</span>))}</div>
+                                <div className="bg-black/60 border border-slate-800 p-2 flex-1 overflow-y-auto custom-scrollbar text-[11px] rounded flex flex-wrap gap-2">
+                                    {onlineUsers.map(u => (<span key={u.uid} style={{ color: u.color }} className="font-bold">● {u.name}</span>))}
+                                </div>
                                 <div className="flex justify-between items-center pt-1 border-t border-white/5">
                                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsEditingName(true)}>
-                                        {isEditingName ? <input autoFocus className="bg-black border-b border-cyan-400 text-[11px] w-20 outline-none" defaultValue={userName} onBlur={e => { setUserName(e.target.value.trim() || userName); safeSetStorage('steam_user_name', e.target.value.trim() || userName); setIsEditingName(false); }} /> : <span className="text-xs font-black" style={{ color: userColor }}>{userName}</span>}
+                                        {isEditingName ? <input autoFocus className="bg-black border-b border-cyan-400 text-[11px] w-20 outline-none" defaultValue={userName} onBlur={e => { setUserName(e.target.value.trim() || userName); safeSetStorage('steam_user_name', e.target.value.trim()); setIsEditingName(false); }} /> : <span className="text-xs font-black" style={{ color: userColor }}>{userName}</span>}
                                         <Icon name="edit-3" className="w-3 h-3 text-slate-600" />
                                     </div>
                                     <input type="color" className="w-6 h-6 bg-transparent cursor-pointer" value={userColor} onChange={e => { setUserColor(e.target.value); safeSetStorage('steam_user_color', e.target.value); }} />
@@ -645,164 +698,237 @@
                             <div className="lg:col-span-4 bg-[#0d1117]/80 p-4 h-[180px] border border-white/10 relative flex flex-col rounded shadow-2xl">
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400"></div>
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                                    <div className="flex items-center gap-2"><span>成員統計</span><button onClick={() => setIsCategoryModalOpen(true)} className="ml-2 bg-indigo-600/30 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded text-[10px] hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-tighter">分類/狀態管理</button></div>
                                     <div className="flex items-center gap-3">
-                                        <Icon name="download" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={handleExportData} />
-                                        <Icon name="upload" className="w-3.5 h-3.5 cursor-pointer hover:text-white" onClick={() => importInputRef.current.click()} /><input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
+                                        <span>成員統計</span>
+                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
+                                        <Icon name="download" className="w-3.5 h-3.5 hover:text-white" onClick={handleExportData} />
+                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" onClick={() => importInputRef.current.click()} />
+                                        <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-                                    <table className="w-full text-[14px] font-black border-collapse mb-4">
+                                    <table className="w-full text-[15px] font-black border-collapse mb-4">
                                         <tbody>
                                             {allMembersStats.map(m => (
                                                 <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
                                                     <td className="py-1" style={{ color: m.color }}>{m.name}</td>
-                                                    {statusOptions.map(opt => (
-                                                        <td key={opt.id} className="text-center">
-                                                            <span 
-                                                                className={`stat-item ${activeStatusFilter.userName === m.name && activeStatusFilter.statusId === opt.id ? 'active-filter' : ''}`}
-                                                                style={{ color: (activeStatusFilter.userName === m.name && activeStatusFilter.statusId === opt.id) ? '#000' : 'inherit' }}
-                                                                onClick={() => handleToggleStatusFilter(m.name, opt.id)}
-                                                            >
-                                                                {opt.label.substring(0,2)} {m.stats[opt.id]}
-                                                            </span>
+                                                    {statusLabels.map(label => (
+                                                        <td key={label.id} style={{ color: label.color }} className={`px-1 cursor-pointer hover:bg-white/5 ${activeFilter?.userName === m.name && activeFilter?.statusId === label.id ? 'filter-active' : 'opacity-70 hover:opacity-100'}`} onClick={() => handleSetFilter(m.name, label.id)}>
+                                                            {label.label} {m.stats[label.id]}
                                                         </td>
                                                     ))}
-                                                    <td className="w-4"><Icon name="x" className="w-3 h-3 text-red-900 opacity-0 group-hover:opacity-100 cursor-pointer" onClick={() => handleRemoveStatsMember(m.name)} /></td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
-                                    <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/5 pt-3">
-                                        {categories.map(cat => (
-                                            <span key={cat} className={`cursor-pointer px-2 py-0.5 rounded-sm text-[9px] font-black uppercase transition-all border ${selectedCategory === cat ? 'bg-cyan-500 border-cyan-500 text-black shadow-[0_0_8px_rgba(34,211,238,0.5)]' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-cyan-400'}`} onClick={() => handleToggleFilter(cat)}>{cat}</span>
-                                        ))}
-                                    </div>
                                 </div>
                             </div>
                         </div>
 
                         <div className="mb-24 shadow-2xl rounded overflow-hidden">
                             <div className="flex items-stretch bg-slate-900 border-x border-t border-slate-700">
-                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0], category: selectedCategory || ''}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
-                                <div className="flex-grow flex items-center px-6 relative" ref={searchRef}>
+                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0]}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
+                                <div className="flex-grow flex items-center px-6 relative">
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
-                                    <input type="text" placeholder="搜尋遊戲..." className="w-full bg-transparent outline-none uppercase font-black tracking-widest text-base" value={searchQuery} onFocus={() => setShowSearchSuggestions(true)} onChange={(e) => { setSearchQuery(e.target.value); setShowSearchSuggestions(true); }} />
-                                    {showSearchSuggestions && searchSuggestions.length > 0 && (
-                                        <div className="absolute top-full left-0 w-full bg-slate-900 border border-slate-700 z-[100] shadow-2xl rounded-b overflow-hidden">
-                                            {searchSuggestions.map(s => (<div key={s.id} className="px-6 py-3 search-suggestion-item cursor-pointer font-black border-b border-white/5 transition-colors" onClick={() => { setSearchQuery(s.name); setShowSearchSuggestions(false); }}>{s.name}</div>))}
-                                        </div>
-                                    )}
+                                    <div className="flex-grow flex items-center gap-4">
+                                        <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                        {activeFilter && (
+                                            <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs animate-pulse">
+                                                <span className="font-black text-cyan-400">正在飾選: {activeFilter.userName} - {statusLabels.find(l=>l.id === activeFilter.statusId)?.label || activeFilter.statusId}</span>
+                                                <button onClick={() => setActiveFilter(null)} className="text-white hover:text-red-500"><Icon name="x-circle" className="w-4 h-4" /></button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="px-6 flex items-center border-l border-slate-800"><button onClick={() => setIsEditLocked(!isEditLocked)} className={`px-4 py-1.5 rounded-full font-black text-xs border transition-all ${isEditLocked ? 'text-red-400 border-red-500/50 bg-red-950/20' : 'text-green-400 border-green-500/50 bg-green-950/20'}`}><Icon name={isEditLocked ? "lock" : "unlock"} className="w-3 h-3 mr-1 inline" />{isEditLocked ? "鎖定" : "解鎖"}</button></div>
+                                <div className="px-6 flex items-center border-l border-slate-800">
+                                    <button onClick={() => setIsEditLocked(!isEditLocked)} className={`px-4 py-1.5 rounded-full font-black text-xs border transition-all ${isEditLocked ? 'text-red-400 border-red-500/50 bg-red-950/20' : 'text-green-400 border-green-500/50 bg-green-950/20'}`}><Icon name={isEditLocked ? "lock" : "unlock"} className="w-3 h-3 mr-1 inline" />{isEditLocked ? "鎖定" : "解鎖"}</button>
+                                </div>
                             </div>
+
                             <div className="bg-slate-900/60 border border-slate-700 overflow-x-auto custom-scrollbar">
                                 <table className="w-full text-left border-collapse min-w-[1500px]">
                                     <thead>
-                                        <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700"><th className="px-2 w-12"></th><th className="px-1 py-5 w-12 text-center">編號</th><th className="px-4 w-28 text-center text-indigo-400">提起人</th><th className="px-4 w-56 text-center">封面</th><th className="px-6 text-center">遊戲名稱</th><th className="px-6 w-32 text-center">價格</th><th className="px-6 w-[450px] text-center">人員狀態</th><th className="px-4 w-16 text-center">操作</th></tr>
+                                        <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
+                                            <th className="px-2 w-12"></th>
+                                            <th className="px-1 py-5 w-24 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <span className="cursor-pointer hover:underline flex items-center gap-1" onClick={() => setSortConfig({key:'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>
+                                                        編號
+                                                        <Icon name={sortConfig.direction === 'asc' ? 'chevron-down' : 'chevron-up'} className="w-3 h-3" />
+                                                    </span>
+                                                </div>
+                                            </th>
+                                            <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
+                                            <th className="px-4 w-56 text-center">封面</th>
+                                            <th className="px-6 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({key:'name', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>遊戲名稱</th>
+                                            <th className="px-6 w-32 text-center">價格</th>
+                                            <th className="px-6 w-[450px] text-center">人員狀態</th>
+                                            <th className="px-4 w-16 text-center">操作</th>
+                                        </tr>
                                     </thead>
                                     <tbody className="text-sm">
-                                        {isLoadingGames ? (<tr><td colSpan="8" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING DATA...</td></tr>) : 
-                                            hierarchy.roots.map((g, i) => (
-                                                <React.Fragment key={g.id}>
-                                                    <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies} statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0} personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={() => setExpandedGroups(p => { const n = new Set(p); if(n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })} onOpenEdit={openEditModal} onStartDrag={setDraggedId} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onAddDLC={(id)=>{setFormData({...formData, parentId:id, currency: currencies[0], category: g.category}); setEditingId(null); setIsModalOpen(true);}} onCategoryClick={handleToggleFilter} />
-                                                    {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child) => (<GameRow key={child.id} g={child} index={-1} isChild={true} currencies={currencies} statusOptions={statusOptions} isEditLocked={isEditLocked} nameColorMap={nameColorMap} personnel={gamePersonnelMap[child.id] || []} onOpenEdit={openEditModal} onDelete={handleDeleteGame} onStatusUpdate={handleStatusUpdate} onUpdateOrder={(id, val) => db.collection(paths.games).doc(id).update({ order: parseInt(val) })} onAddPersonnel={(id)=>setNewPersonnelInput({gameId:id, name: ''})} onCategoryClick={handleToggleFilter} />))}
-                                                </React.Fragment>
-                                            ))
-                                        }
+                                        {isLoadingGames ? (
+                                            <tr><td colSpan="8" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING DATA...</td></tr>
+                                        ) : hierarchy.roots.map((g, i) => (
+                                            <React.Fragment key={g.id}>
+                                                <GameRow 
+                                                    g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
+                                                    statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
+                                                    personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
+                                                    onStartDrag={(id, idx) => { setDraggedId(id); setDraggedIdx(idx); }} 
+                                                    onDrop={(targetIdx) => {
+                                                        const newRoots = [...hierarchy.roots]; const [removed] = newRoots.splice(draggedIdx, 1);
+                                                        newRoots.splice(targetIdx, 0, removed);
+                                                        const batch = db.batch(); newRoots.forEach((root, idx) => batch.update(db.collection(paths.games).doc(root.id), { order: idx + 1 }));
+                                                        batch.commit();
+                                                    }}
+                                                    onUpdateOrder={handleUpdateOrder}
+                                                    onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }}
+                                                    onNest={(id) => handleNestGame(draggedId, id)}
+                                                    onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
+                                                    onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
+                                                    onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame}
+                                                    onRemovePersonnel={async (id, name) => { 
+                                                        setDeleteConfirm({
+                                                            title: `確定從矩陣中移除人員 [${name}] ?`,
+                                                            action: async () => {
+                                                                await db.collection(paths.statuses).doc(id).delete();
+                                                                setDeleteConfirm(null);
+                                                            }
+                                                        });
+                                                    }}
+                                                />
+                                                {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map(child => (
+                                                    <GameRow 
+                                                        key={child.id} g={child} isChild={true} isEditLocked={isEditLocked} draggedId={draggedId}
+                                                        personnel={gamePersonnelMap[child.id] || []} nameColorMap={nameColorMap} currencies={currencies}
+                                                        statusOptions={statusOptions} onOpenEdit={openEditModal} onUpdateOrder={()=>{}} onStatusUpdate={handleStatusUpdate}
+                                                        onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
+                                                        onDelete={handleDeleteGame} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
+                                                        onRemovePersonnel={async (id, name) => { 
+                                                            setDeleteConfirm({
+                                                                title: `確定從矩陣中移除人員 [${name}] ?`,
+                                                                action: async () => {
+                                                                    await db.collection(paths.statuses).doc(id).delete();
+                                                                    setDeleteConfirm(null);
+                                                                }
+                                                            });
+                                                        }}
+                                                    />
+                                                ))}
+                                            </React.Fragment>
+                                        ))}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
 
-                    {/* 分類管理彈窗 (新增狀態修改功能) */}
-                    {isCategoryModalOpen && (
-                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-slate-900 border border-slate-700 w-full max-w-lg p-8 rounded shadow-2xl relative">
-                                <button onClick={() => setIsCategoryModalOpen(false)} className="absolute right-6 top-6 text-slate-500 hover:text-white transition-colors"><Icon name="x" className="w-6 h-6" /></button>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div>
-                                        <h4 className="text-cyan-400 font-black text-lg mb-4 uppercase tracking-widest italic border-b border-cyan-400/20 pb-2">分類管理</h4>
-                                        <div className="flex gap-2 mb-4">
-                                            <input type="text" placeholder="新分類..." className="flex-1 bg-black border border-slate-800 p-2 rounded outline-none focus:border-cyan-500 font-bold text-xs" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCategory()} />
-                                            <button onClick={handleAddCategory} className="bg-cyan-600 hover:bg-cyan-500 text-black px-3 py-1 rounded font-black text-[10px] uppercase">新增</button>
+                    {isStatusSettingsOpen && (
+                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
+                                <h3 className="text-2xl font-black mb-6 italic text-cyan-400 uppercase tracking-widest">狀態分組與顏色設定</h3>
+                                <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2 mb-6">
+                                    {statusLabels.map((item, index) => (
+                                        <div key={item.id} className="flex items-center gap-3 bg-black/40 p-3 rounded border border-white/5 group">
+                                            <div className="flex flex-col items-center gap-1 shrink-0">
+                                                <div className="text-[9px] font-black text-slate-600 uppercase">顏色</div>
+                                                <input 
+                                                    type="color"
+                                                    className="w-10 h-10 bg-transparent cursor-pointer rounded border border-white/10"
+                                                    value={item.color}
+                                                    onChange={e => {
+                                                        const newList = [...statusLabels];
+                                                        newList[index].color = e.target.value;
+                                                        setStatusLabels(newList);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="flex-grow flex flex-col gap-1">
+                                                <div className="text-[9px] font-black text-slate-600 uppercase pl-1">標籤名稱</div>
+                                                <input 
+                                                    className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold"
+                                                    style={{ color: item.color }}
+                                                    value={item.label}
+                                                    onChange={e => {
+                                                        const newList = [...statusLabels];
+                                                        newList[index].label = e.target.value;
+                                                        setStatusLabels(newList);
+                                                    }}
+                                                />
+                                            </div>
+                                            <button onClick={() => removeStatusGroup(item.id)} className="text-slate-600 hover:text-red-500 transition-colors pt-4">
+                                                <Icon name="trash-2" className="w-6 h-6" />
+                                            </button>
                                         </div>
-                                        <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                                            {categories.map(cat => (
-                                                <div key={cat} className="flex items-center justify-between bg-black/40 border border-white/5 p-2 rounded group"><span className="font-bold text-xs text-slate-300">{cat}</span><div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="edit-2" className="w-3 h-3 text-slate-500 hover:text-cyan-400" onClick={() => handleRenameCategory(cat)} /><Icon name="trash-2" className="w-3 h-3 text-slate-500 hover:text-red-500" onClick={() => handleRemoveCategory(cat)} /></div></div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h4 className="text-fuchsia-400 font-black text-lg mb-4 uppercase tracking-widest italic border-b border-fuchsia-400/20 pb-2">狀態名稱管理</h4>
-                                        <div className="space-y-4">
-                                            {statusOptions.map(opt => (
-                                                <div key={opt.id} className="bg-black/40 p-2 rounded border border-white/5">
-                                                    <label className="text-[10px] text-slate-500 uppercase mb-1 block">原始狀態：{opt.id}</label>
-                                                    <div className="flex gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            className="flex-1 bg-slate-950 border border-slate-800 p-2 rounded outline-none focus:border-fuchsia-400 font-black text-xs"
-                                                            defaultValue={opt.label}
-                                                            onBlur={(e) => handleSaveStatusLabel(opt.id, e.target.value)}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    ))}
+                                </div>
+                                <button onClick={addNewStatusGroup} className="w-full py-4 mb-8 border border-dashed border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/5 font-black rounded transition-all uppercase tracking-widest">+ 新增狀態分組</button>
+                                <div className="flex gap-4">
+                                    <button type="button" onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-4 bg-slate-900 font-black rounded uppercase tracking-widest">取消</button>
+                                    <button onClick={handleUpdateLabels} className="flex-1 py-4 bg-cyan-600 text-black font-black rounded hover:bg-cyan-500 uppercase tracking-widest">儲存同步</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 遊戲錄入彈窗 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm">
-                            <div className="bg-[#0b0e14] border-t-2 border-cyan-400 w-full max-w-2xl p-10 relative shadow-2xl rounded-sm">
-                                <button onClick={closeModal} className="absolute right-8 top-8 text-slate-600 hover:text-white transition-colors"><Icon name="x" className="w-6 h-6" /></button>
-                                <h3 className="text-3xl font-black mb-10 italic underline decoration-cyan-400/30 decoration-4 uppercase tracking-tighter">{editingId ? '修改' : '錄入'} <span className="text-cyan-400">{formData.parentId ? 'DLC 擴充' : '數據庫'}</span></h3>
-                                <form onSubmit={handleSaveGame} className="grid grid-cols-1 md:grid-cols-3 gap-10">
-                                    <div className="md:col-span-1">
-                                        <div onClick={()=>fileInputRef.current.click()} className="aspect-[3/4] bg-slate-950 border border-slate-800 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-cyan-400 transition-colors">
-                                            {formData.cover ? <img src={formData.cover} className="w-full h-full object-contain" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500"><Icon name="upload" className="w-10 h-10" /><span className="text-[10px] font-black uppercase tracking-widest">貼上封面</span></div>}
-                                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ const file = e.target.files[0]; if(file) { const reader = new FileReader(); reader.onload = async (ev) => { setFormData({...formData, cover: await compressImage(ev.target.result)}); }; reader.readAsDataURL(file); } }} />
-                                        </div>
+                            <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-sm">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-right from-cyan-500 to-indigo-600"></div>
+                                <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10"><Icon name="x" className="w-5 h-5" /></button>
+                                <div className="p-6 md:p-8">
+                                    <div className="mb-6 -ml-2 flex items-baseline gap-4">
+                                        <h3 className="text-2xl font-black italic tracking-tighter flex items-center gap-2 underline decoration-cyan-400/30 decoration-4"><span>{editingId ? '修改' : '錄入'}</span><span className="text-cyan-400">{formData.parentId ? 'DLC 擴充' : '數據庫'}</span></h3>
+                                        <div className="h-0.5 flex-grow bg-white/5"></div>
                                     </div>
-                                    <div className="md:col-span-2 space-y-6">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">提起人</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}><option value="">選擇人員...</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">遊戲分類</label><select className="w-full bg-black border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all appearance-none" value={formData.category} onChange={e=>setFormData({...formData, category: e.target.value})}><option value="">選擇分類...</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                                    <form onSubmit={handleSaveGame} className="space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                                            <div className="md:col-span-4 flex flex-col items-center justify-start">
+                                                <div className="w-full max-w-[120px] group relative">
+                                                    <div className="absolute inset-0 bg-cyan-500/10 blur-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                    <div onClick={() => fileInputRef.current.click()} className="aspect-[3/4.2] bg-black border border-slate-800 rounded flex flex-col items-center justify-center cursor-pointer overflow-hidden relative z-10 hover:border-cyan-400 transition-all shadow-xl">
+                                                        {formData.cover ? <img src={formData.cover} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500 transition-colors"><Icon name="camera" className="w-6 h-6" /><span className="text-[9px] font-black uppercase tracking-tighter text-center px-2 leading-tight">貼上封面<br/>(CTRL+V)</span></div>}
+                                                    </div>
+                                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ const file = e.target.files[0]; if(file) { const reader = new FileReader(); reader.onload = async (ev) => { const compressed = await compressImage(ev.target.result); setFormData({...formData, cover: compressed}); }; reader.readAsDataURL(file); } }} />
+                                                </div>
+                                            </div>
+                                            <div className="md:col-span-8 space-y-3">
+                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">提起人</label><select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}><option value="">選擇人員...</option>{tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                                <div className="modal-field-container items-start"><label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left mt-2.5">遊戲名稱</label><textarea required rows="2" placeholder="輸入名稱..." className="modal-input-base w-full text-lg font-black resize-none leading-snug" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} /></div>
+                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">商店網址</label><div className="relative"><Icon name="link-2" className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" /><input className="modal-input-base w-full pl-9 text-[10px] font-mono text-cyan-400" placeholder="https://store.steampowered.com/..." value={formData.url} onChange={e=>setFormData({...formData, url: e.target.value})} /></div></div>
+                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">價格設定</label><div className="flex w-fit items-stretch overflow-hidden rounded bg-black/40 border-b-2 border-slate-800 focus-within:border-cyan-400 transition-all"><div className="flex items-center bg-indigo-900/10 px-3 border-r border-white/5"><select className="bg-transparent font-black text-indigo-400 outline-none appearance-none cursor-pointer text-sm" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c} className="bg-[#0b0e14]">{c}</option>)}</select><Icon name="chevron-down" className="w-3 h-3 ml-1 text-indigo-400/50" /></div><input type="number" placeholder="0" className="bg-transparent p-2 text-xl font-black outline-none text-white tracking-tighter w-28" value={formData.price === '0' ? '' : formData.price} onChange={e=>setFormData({...formData, price: e.target.value || '0'})} /></div></div>
+                                            </div>
                                         </div>
-                                        <div className="w-full"><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">遊戲名稱</label><textarea required rows="2" className="w-full bg-transparent border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400 transition-all resize-none custom-scrollbar font-black" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} /></div>
-                                        <div className="grid grid-cols-2 gap-6">
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">貨幣</label><select className="w-full bg-black border-b border-slate-800 p-2 font-black outline-none" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                                            <div><label className="text-xs font-black text-indigo-400 block mb-1 uppercase tracking-widest">官方價格</label><input type="number" className="w-full bg-transparent border-b border-slate-800 p-2 text-xl font-black outline-none focus:border-cyan-400" value={formData.price} onChange={e=>setFormData({...formData, price: e.target.value})} /></div>
+                                        <div className="pt-4 flex gap-4">
+                                            <button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-[12px] font-black uppercase tracking-widest transition-all rounded-sm border border-white/5">放棄更改</button>
+                                            <button type="submit" className="flex-[2] py-3 bg-cyan-600 hover:bg-cyan-500 text-black text-[12px] font-black uppercase tracking-widest transition-all rounded-sm shadow-lg active:scale-[0.98]">確認同步至矩陣庫</button>
                                         </div>
-                                        <button type="submit" className="w-full py-6 bg-indigo-700 hover:bg-indigo-600 font-black tracking-[0.2em] border-r-[12px] border-cyan-400 uppercase transition-all shadow-xl active:scale-95 text-sm">確認同步至矩陣庫</button>
-                                    </div>
-                                </form>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     )}
-                    
-                    {/* 添加人員彈窗 */}
-                    {newPersonnelInput.gameId && (
-                        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                            <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
-                                <h4 className="text-indigo-400 font-black mb-4 uppercase tracking-widest text-sm">添加遊戲人員</h4>
-                                <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 font-black text-sm" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇人員 -</option>{allAvailableMembers.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 其他人 (手動輸入) -</option></select>
-                                {newPersonnelInput.name === "_manual_" && (<input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 text-sm" placeholder="輸入名稱..." onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />)}
-                                <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black uppercase rounded">取消</button><button onClick={() => { if (newPersonnelInput.name && newPersonnelInput.name !== "_manual_") handleAddPersonnel(newPersonnelInput.gameId); else showNotify("請輸入名稱"); }} className="flex-1 py-2 bg-indigo-600 text-xs font-black uppercase rounded">確認添加</button></div>
+
+                    {deleteConfirm && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-w-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+                                <div className="flex items-center gap-3 mb-6 text-red-500">
+                                    <Icon name="alert-triangle" className="w-8 h-8" />
+                                    <h3 className="text-xl font-black italic uppercase tracking-tighter">確認抹除操作</h3>
+                                </div>
+                                <p className="text-slate-300 font-bold mb-8 leading-relaxed text-sm">{deleteConfirm.title}</p>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-3 bg-slate-900 text-[11px] font-black uppercase tracking-widest rounded-sm border border-white/5">取消</button>
+                                    <button onClick={deleteConfirm.action} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black uppercase tracking-widest rounded-sm shadow-lg">確認刪除</button>
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
             );
         }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
