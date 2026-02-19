@@ -260,10 +260,10 @@
                         <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
                     </td>
                     <td className="px-1" onClick={(e)=>e.stopPropagation()}>
-                        <div className="flex items-stretch gap-10 w-fit mx-auto min-h-[40px]">
-                            <div className="flex flex-col gap-1 shrink-0">
+                        <div className="flex items-stretch gap-4 w-fit mx-auto min-h-[40px]">
+                            <div className="flex flex-col gap-0.5 shrink-0">
                                 {personnel.map(p => (
-                                    <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[380px] shrink-0">
+                                    <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-1 shadow-sm text-[14px] h-9 min-w-[370px] shrink-0">
                                         <span className="font-black truncate w-20 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
                                         <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
                                             {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
@@ -293,7 +293,7 @@
                                         <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                     </div>
                                 ))}
-                                {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[380px]">EMPTY MATRIX</div>}
+                                {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[370px]">EMPTY MATRIX</div>}
                             </div>
                             <button 
                                 onClick={() => onAddPersonnel(g.id)} 
@@ -312,7 +312,7 @@
         });
 
         function App() {
-            // 1. States & Refs (變數聲明最優先)
+            // 1. States & Refs
             const [user, setUser] = useState(null);
             const [draggedId, setDraggedId] = useState(null);
             const [draggedIdx, setDraggedIdx] = useState(null);
@@ -337,7 +337,8 @@
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [activeFilter, setActiveFilter] = useState(null);
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
-            const [deleteConfirm, setDeleteConfirm] = useState(null); // { title, action }
+            const [deleteConfirm, setDeleteConfirm] = useState(null);
+            const [quotaExceeded, setQuotaExceeded] = useState(false);
             const [statusLabels, setStatusLabels] = useState([
                 { id: 'unbought', label: '願望清單', color: '#ffffff' },
                 { id: 'bought', label: '已購買', color: '#67e8f9' },
@@ -357,7 +358,7 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
-            // 2. Memos (計算屬性)
+            // 2. Memos
             const statusOptions = useMemo(() => {
                 return statusLabels.map(l => ({ id: l.id, label: l.label, color: `text-white border-slate-500 bg-slate-700/30` }));
             }, [statusLabels]);
@@ -372,7 +373,7 @@
             const nameColorMap = useMemo(() => {
                 const map = {};
                 onlineUsers.forEach(u => map[u.name] = u.color);
-                allUserStatuses.forEach(s => { if (s.userColor && !map[s.userName]) map[s.userName] = s.userColor; });
+                allUserStatuses.forEach(s => { if (s.userColor && !map[s.userName]) map[s.userColor] = s.userColor; });
                 map[userName] = userColor;
                 return map;
             }, [onlineUsers, allUserStatuses, userName, userColor]);
@@ -420,7 +421,7 @@
 
             const handleUpdateOrder = useCallback(async (targetId, newValue) => {
                 const newOrderValue = parseInt(newValue);
-                if (isNaN(newOrderValue) || !db) return;
+                if (isNaN(newOrderValue) || !db || quotaExceeded) return;
 
                 try {
                     const roots = games.filter(g => !g.parentId);
@@ -443,15 +444,18 @@
                     await batch.commit();
                     showNotify(`編號校準完成`);
                 } catch (e) {
+                    if (e.code === 'resource-exhausted') setQuotaExceeded(true);
                     showNotify("編號更新失敗");
                 }
-            }, [db, games, paths, showNotify]);
+            }, [db, games, paths, showNotify, quotaExceeded]);
 
             const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user) {
-                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+                if(isClient && db && user && !quotaExceeded) {
+                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(err => {
+                        if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                    });
                 }
-            }, [userName, user, paths]);
+            }, [userName, user, paths, quotaExceeded]);
 
             const handleToggleGroup = useCallback((id) => {
                 setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -475,24 +479,31 @@
             }, [currencies]);
 
             const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
-                if (!isClient || !user || !db) return;
+                if (!isClient || !user || !db || quotaExceeded) return;
                 const docId = `${gameId}_${targetUserId}`;
                 if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
-                await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
-            }, [user, userColor, userName, paths]);
+                try {
+                    await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
+                } catch (err) {
+                    if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                }
+            }, [user, userColor, userName, paths, quotaExceeded]);
 
             const handleUpdateLabels = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!db) return;
+                if (!db || quotaExceeded) return;
                 try {
                     await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
                     setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
-                } catch (err) { showNotify("儲存失敗"); }
-            }, [statusLabels, paths, showNotify]);
+                } catch (err) { 
+                    if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                    showNotify("儲存失敗"); 
+                }
+            }, [statusLabels, paths, showNotify, quotaExceeded]);
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!formData.name.trim() || !user || !db) return;
+                if (!formData.name.trim() || !user || !db || quotaExceeded) return;
                 try {
                     const finalData = { ...formData, addedBy: formData.addedBy || userName };
                     if (editingId) { 
@@ -505,11 +516,14 @@
                         logActivity("錄入", finalData.name); 
                     }
                     showNotify("同步成功"); closeModal();
-                } catch (err) { showNotify("同步失敗"); }
-            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
+                } catch (err) { 
+                    if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                    showNotify("同步失敗"); 
+                }
+            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify, quotaExceeded]);
 
             const handleDeleteGame = useCallback(async (game) => {
-                if(!db) return;
+                if(!db || quotaExceeded) return;
                 setDeleteConfirm({
                     title: `確定從矩陣中抹除 [${game.name}] ?`,
                     action: async () => {
@@ -518,18 +532,24 @@
                             logActivity("刪除", game.name);
                             showNotify("已刪除");
                             setDeleteConfirm(null);
-                        } catch (e) { showNotify("刪除失敗"); }
+                        } catch (e) { 
+                            if (e.code === 'resource-exhausted') setQuotaExceeded(true);
+                            showNotify("刪除失敗"); 
+                        }
                     }
                 });
-            }, [db, paths, logActivity, showNotify]);
+            }, [db, paths, logActivity, showNotify, quotaExceeded]);
 
             const handleNestGame = useCallback(async (childId, parentId) => {
-                if (isEditLocked || !childId || childId === parentId || !db) return;
+                if (isEditLocked || !childId || childId === parentId || !db || quotaExceeded) return;
                 try {
                     await db.collection(paths.games).doc(childId).update({ parentId });
                     showNotify("已放入分組");
-                } catch (e) { showNotify("分組失敗"); }
-            }, [isEditLocked, db, paths, showNotify]);
+                } catch (e) { 
+                    if (e.code === 'resource-exhausted') setQuotaExceeded(true);
+                    showNotify("分組失敗"); 
+                }
+            }, [isEditLocked, db, paths, showNotify, quotaExceeded]);
 
             const handleExportData = useCallback(() => {
                 const backup = { version: "6.5", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
@@ -538,7 +558,7 @@
             }, [games, allUserStatuses, statusLabels, currencies]);
 
             const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file || !db) return;
+                const file = e.target.files[0]; if (!file || !db || quotaExceeded) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
@@ -550,16 +570,19 @@
                             }
                         }
                         showNotify("導入完成");
-                    } catch (err) { showNotify("導入失敗"); }
+                    } catch (err) { 
+                        if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                        showNotify("導入失敗"); 
+                    }
                 };
                 reader.readAsText(file);
-            }, [db, paths, showNotify]);
+            }, [db, paths, showNotify, quotaExceeded]);
 
             const handleAddPersonnel = useCallback(async (e) => {
                 if(e) e.preventDefault();
                 const name = newPersonnelInput.name.trim(); 
                 const gameId = newPersonnelInput.gameId;
-                if (!name || !gameId || !db) return;
+                if (!name || !gameId || !db || quotaExceeded) return;
                 
                 const targetUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const defaultSid = statusLabels[0]?.id || 'unbought';
@@ -577,7 +600,7 @@
                 } catch(err) {
                     showNotify("添加失敗");
                 }
-            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels, showNotify]);
+            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels, showNotify, quotaExceeded]);
 
             const addNewStatusGroup = () => {
                 const newId = `status_${Date.now()}`;
@@ -611,35 +634,72 @@
                 return () => unsub();
             }, []);
 
+            // 優化後的監聽器：當額度耗盡時停止，並移除多餘的依賴
             useEffect(() => {
-                if (!isClient || !user || !db) return;
-                const updatePresence = () => {
-                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                if (!isClient || !user || !db || quotaExceeded) return;
+
+                const handleError = (err) => {
+                    if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                    console.error("Firestore Listener Error:", err);
                 };
-                updatePresence();
-                const heartbeat = setInterval(updatePresence, 30000);
-                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
-                    const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                    setOnlineUsers(list);
-                });
+
                 const unsubL = db.collection(paths.logs).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                     setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                });
+                }, handleError);
+
                 const unsubG = db.collection(paths.games).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setGames(data); setIsLoadingGames(false);
-                });
+                }, handleError);
+
                 const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(data);
-                });
-                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
-                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); });
-                return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
-            }, [user, userName, userColor, paths]);
+                }, handleError);
+
+                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
+                    const list = []; const now = Date.now();
+                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                    setOnlineUsers(list);
+                }, handleError);
+
+                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
+                }, handleError);
+
+                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); 
+                }, handleError);
+
+                return () => { 
+                    unsubL(); unsubG(); unsubS(); unsubP(); unsubLabels(); unsubGlobal(); 
+                };
+            }, [user, paths, quotaExceeded]);
+
+            // Presence 心跳優化：延長週期，並使用防抖
+            useEffect(() => {
+                if (!isClient || !user || !db || quotaExceeded) return;
+                
+                const updatePresence = async () => {
+                    try {
+                        await db.collection(paths.presence).doc(user.uid).set({ 
+                            uid: user.uid, name: userName, color: userColor, 
+                            lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                        }, { merge: true });
+                    } catch (err) {
+                        if (err.code === 'resource-exhausted') setQuotaExceeded(true);
+                    }
+                };
+
+                const timeoutId = setTimeout(updatePresence, 2000); // 延遲執行初始更新
+                const heartbeat = setInterval(updatePresence, 60000); // 心跳延至 60 秒一次
+                return () => {
+                    clearTimeout(timeoutId);
+                    clearInterval(heartbeat);
+                };
+            }, [user, userName, userColor, paths, quotaExceeded]);
 
             useEffect(() => {
                 if (!isClient && !isModalOpen) return;
@@ -671,13 +731,22 @@
                 if (isClient && window.lucide) {
                     try { window.lucide.createIcons(); } catch (e) {}
                 }
-            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length, deleteConfirm, newPersonnelInput.gameId]);
+            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length, deleteConfirm, newPersonnelInput.gameId, quotaExceeded]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
                     {notification && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-cyan-500 text-black font-black px-6 py-2 rounded-full border-2 border-white shadow-2xl">{notification}</div>}
                     
+                    {/* 額度耗盡警告 UI */}
+                    {quotaExceeded && (
+                        <div className="fixed top-0 left-0 right-0 z-[1000] bg-red-600 text-white p-4 font-black flex items-center justify-center gap-4 animate-bounce border-b-4 border-red-900 shadow-2xl">
+                            <Icon name="alert-octagon" className="w-8 h-8" />
+                            <span>Firestore 資源已耗盡 (Quota Exceeded)！請等待重置或減少連線數。</span>
+                            <button onClick={() => setQuotaExceeded(false)} className="bg-white text-red-600 px-4 py-1 rounded text-xs">重試</button>
+                        </div>
+                    )}
+
                     <div className="max-w-[1600px] mx-auto">
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
@@ -707,7 +776,10 @@
                                         {isEditingName ? <input autoFocus className="bg-black border-b border-cyan-400 text-[11px] w-20 outline-none" defaultValue={userName} onBlur={e => { setUserName(e.target.value.trim() || userName); safeSetStorage('steam_user_name', e.target.value.trim()); setIsEditingName(false); }} /> : <span className="text-xs font-black" style={{ color: userColor }}>{userName}</span>}
                                         <Icon name="edit-3" className="w-3 h-3 text-slate-600" />
                                     </div>
-                                    <input type="color" className="w-6 h-6 bg-transparent cursor-pointer" value={userColor} onChange={e => { setUserColor(e.target.value); safeSetStorage('steam_user_color', e.target.value); }} />
+                                    <input type="color" className="w-6 h-6 bg-transparent cursor-pointer" value={userColor} 
+                                        onChange={e => setUserColor(e.target.value)}
+                                        onBlur={e => { safeSetStorage('steam_user_color', e.target.value); }} 
+                                    />
                                 </div>
                             </div>
                             <div className="lg:col-span-4 bg-[#0d1117]/80 p-4 h-[180px] border border-white/10 relative flex flex-col rounded shadow-2xl">
@@ -765,7 +837,7 @@
                                     <thead>
                                         <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
                                             <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-24 text-center">
+                                            <th className="px-1 py-5 w-18 text-center">
                                                 <div className="flex items-center justify-center gap-2">
                                                     <span className="cursor-pointer hover:underline flex items-center gap-1" onClick={() => setSortConfig({key:'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>
                                                         編號
@@ -776,7 +848,7 @@
                                             <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({key:'name', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>遊戲名稱</th>
-                                            <th className="px-6 w-32 text-center">價格</th>
+                                            <th className="px-6 w-26 text-center">價格</th>
                                             <th className="px-6 w-[450px] text-center">人員狀態</th>
                                             <th className="px-4 w-16 text-center">操作</th>
                                         </tr>
@@ -927,7 +999,7 @@
 
                     {deleteConfirm && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-w-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
                                 <div className="flex items-center gap-3 mb-6 text-red-500">
                                     <Icon name="alert-triangle" className="w-8 h-8" />
                                     <h3 className="text-xl font-black italic uppercase tracking-tighter">確認抹除操作</h3>
