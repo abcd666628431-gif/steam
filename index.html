@@ -555,14 +555,29 @@
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
 
-            const handleAddPersonnel = useCallback(async (gameId) => {
+            const handleAddPersonnel = useCallback(async (e) => {
+                if(e) e.preventDefault();
                 const name = newPersonnelInput.name.trim(); 
-                if (!name || name === "_manual_" || !db) return;
+                const gameId = newPersonnelInput.gameId;
+                if (!name || !gameId || !db) return;
+                
                 const targetUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const defaultSid = statusLabels[0]?.id || 'unbought';
-                await handleStatusUpdate(gameId, targetUserId, { userName: name, userColor: nameColorMap[name] || '#fff', status: defaultSid, purchasePrice: '0', purchaseCurrency: currencies[0] });
-                setNewPersonnelInput({ gameId: null, name: '' });
-            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels]);
+                
+                try {
+                    await handleStatusUpdate(gameId, targetUserId, { 
+                        userName: name, 
+                        userColor: nameColorMap[name] || '#fff', 
+                        status: defaultSid, 
+                        purchasePrice: '0', 
+                        purchaseCurrency: currencies[0] 
+                    });
+                    setNewPersonnelInput({ gameId: null, name: '' });
+                    showNotify("成員已添加");
+                } catch(err) {
+                    showNotify("添加失敗");
+                }
+            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels, showNotify]);
 
             const addNewStatusGroup = () => {
                 const newId = `status_${Date.now()}`;
@@ -656,7 +671,7 @@
                 if (isClient && window.lucide) {
                     try { window.lucide.createIcons(); } catch (e) {}
                 }
-            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length, deleteConfirm]);
+            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length, deleteConfirm, newPersonnelInput.gameId]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -912,7 +927,7 @@
 
                     {deleteConfirm && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-w-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
                                 <div className="flex items-center gap-3 mb-6 text-red-500">
                                     <Icon name="alert-triangle" className="w-8 h-8" />
                                     <h3 className="text-xl font-black italic uppercase tracking-tighter">確認抹除操作</h3>
@@ -922,6 +937,49 @@
                                     <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-3 bg-slate-900 text-[11px] font-black uppercase tracking-widest rounded-sm border border-white/5">取消</button>
                                     <button onClick={deleteConfirm.action} className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white text-[11px] font-black uppercase tracking-widest rounded-sm shadow-lg">確認刪除</button>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 添加人員彈窗 */}
+                    {newPersonnelInput.gameId && (
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-sm p-8 rounded shadow-2xl">
+                                <h3 className="text-xl font-black mb-6 italic text-cyan-400 uppercase tracking-widest">添加矩陣成員</h3>
+                                <form onSubmit={handleAddPersonnel}>
+                                    <div className="space-y-4 mb-8">
+                                        <div>
+                                            <div className="text-[10px] font-black text-slate-600 uppercase mb-2 pl-1">從統計中選擇成員</div>
+                                            <select 
+                                                className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-cyan-400 font-bold text-sm"
+                                                onChange={e => {
+                                                    if(e.target.value) {
+                                                        setNewPersonnelInput({...newPersonnelInput, name: e.target.value});
+                                                    }
+                                                }}
+                                                value=""
+                                            >
+                                                <option value="">-- 選擇現有人員 --</option>
+                                                {tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-slate-600 uppercase mb-2 pl-1">手動輸入 / 已選名稱</div>
+                                            <input 
+                                                autoFocus
+                                                required
+                                                className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-cyan-400 font-bold"
+                                                placeholder="輸入名字..."
+                                                value={newPersonnelInput.name}
+                                                onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <button type="button" onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-3 bg-slate-900 text-[11px] font-black rounded uppercase tracking-widest border border-white/5">取消</button>
+                                        <button type="submit" className="flex-1 py-3 bg-cyan-600 text-black text-[11px] font-black rounded hover:bg-cyan-500 uppercase tracking-widest shadow-lg">確認添加</button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     )}
