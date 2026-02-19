@@ -178,8 +178,9 @@
                             <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
                         </td>
                         
-                        <td className="px-4">
-                            <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500">
+                        <td className="px-4 py-3">
+                            {/* 將 py-6 改為 py-3，使封面之間保持適當的小間距 */}
+                            <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
                                 {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
                             </div>
                         </td>
@@ -806,7 +807,7 @@
                                 <form onSubmit={handleSaveGame} className="grid grid-cols-1 md:grid-cols-3 gap-10">
                                     {/* 封面區域 */}
                                     <div className="md:col-span-1">
-                                        <div onClick={()=>fileInputRef.current.click()} className="aspect-[3/4] bg-slate-950 border border-slate-800 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-cyan-400 transition-colors">
+                                        <div onClick={()=>fileInputRef.current.click()} className="aspect-[3/4] bg-slate-950 border border-slate-800 flex items-center justify-center cursor-pointer overflow-hidden group hover:border-cyan-400 transition-colors p-2">
                                             {formData.cover ? 
                                                 <img src={formData.cover} className="w-full h-full object-contain" /> : 
                                                 <div className="flex flex-col items-center gap-3 text-slate-700 group-hover:text-cyan-500 text-center px-4">
