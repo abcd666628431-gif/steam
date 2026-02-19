@@ -634,13 +634,16 @@
                 return () => unsub();
             }, []);
 
-            // 優化後的監聽器：當額度耗盡時停止，並移除多餘的依賴
+            // 核心資料監聽器 (斷路器優化)
             useEffect(() => {
                 if (!isClient || !user || !db || quotaExceeded) return;
 
                 const handleError = (err) => {
-                    if (err.code === 'resource-exhausted') setQuotaExceeded(true);
-                    console.error("Firestore Listener Error:", err);
+                    if (err.code === 'resource-exhausted') {
+                        setQuotaExceeded(true);
+                        showNotify("Firestore 額度已耗盡，請暫停操作。");
+                    }
+                    console.error("Firestore Error:", err);
                 };
 
                 const unsubL = db.collection(paths.logs).onSnapshot(snap => {
@@ -676,13 +679,14 @@
                 return () => { 
                     unsubL(); unsubG(); unsubS(); unsubP(); unsubLabels(); unsubGlobal(); 
                 };
-            }, [user, paths, quotaExceeded]);
+            }, [user, paths, quotaExceeded, showNotify]);
 
-            // Presence 心跳優化：延長週期，並使用防抖
+            // Presence 心跳進一步優化 (120s 週期)
             useEffect(() => {
                 if (!isClient || !user || !db || quotaExceeded) return;
                 
                 const updatePresence = async () => {
+                    if (quotaExceeded) return;
                     try {
                         await db.collection(paths.presence).doc(user.uid).set({ 
                             uid: user.uid, name: userName, color: userColor, 
@@ -693,10 +697,10 @@
                     }
                 };
 
-                const timeoutId = setTimeout(updatePresence, 2000); // 延遲執行初始更新
-                const heartbeat = setInterval(updatePresence, 60000); // 心跳延至 60 秒一次
+                const initialDelay = setTimeout(updatePresence, 3000); 
+                const heartbeat = setInterval(updatePresence, 120000); // 延長至兩分鐘一次心跳
                 return () => {
-                    clearTimeout(timeoutId);
+                    clearTimeout(initialDelay);
                     clearInterval(heartbeat);
                 };
             }, [user, userName, userColor, paths, quotaExceeded]);
@@ -738,12 +742,15 @@
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
                     {notification && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-cyan-500 text-black font-black px-6 py-2 rounded-full border-2 border-white shadow-2xl">{notification}</div>}
                     
-                    {/* 額度耗盡警告 UI */}
+                    {/* 額度耗盡警告 UI - 改為固定顯示 */}
                     {quotaExceeded && (
-                        <div className="fixed top-0 left-0 right-0 z-[1000] bg-red-600 text-white p-4 font-black flex items-center justify-center gap-4 animate-bounce border-b-4 border-red-900 shadow-2xl">
+                        <div className="mb-6 bg-red-600 border-b-4 border-red-900 text-white p-4 rounded-sm flex items-center justify-center gap-4 animate-pulse shadow-2xl">
                             <Icon name="alert-octagon" className="w-8 h-8" />
-                            <span>Firestore 資源已耗盡 (Quota Exceeded)！請等待重置或減少連線數。</span>
-                            <button onClick={() => setQuotaExceeded(false)} className="bg-white text-red-600 px-4 py-1 rounded text-xs">重試</button>
+                            <div className="flex flex-col">
+                                <span className="font-black text-lg"> Firestore 讀取/寫入額度已耗盡！</span>
+                                <span className="text-xs opacity-80">資料同步已自動暫停。請等待重置（通常為太平洋時間午夜）後再試。</span>
+                            </div>
+                            <button onClick={() => setQuotaExceeded(false)} className="bg-white text-red-600 px-6 py-2 rounded-sm font-black text-xs uppercase hover:bg-slate-200 transition-colors">嘗試重新連線</button>
                         </div>
                     )}
 
@@ -999,7 +1006,7 @@
 
                     {deleteConfirm && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-w-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
+                            <div className="bg-[#0b0e14] border-2 border-red-500/30 w-full max-sm p-8 rounded shadow-[0_0_50px_rgba(239,68,68,0.2)]">
                                 <div className="flex items-center gap-3 mb-6 text-red-500">
                                     <Icon name="alert-triangle" className="w-8 h-8" />
                                     <h3 className="text-xl font-black italic uppercase tracking-tighter">確認抹除操作</h3>
