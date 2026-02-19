@@ -177,15 +177,14 @@
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCuTmCC96XtdUe3HFsCv-3tQ_AAPQMIOtM",
-  authDomain: "steam-35a18.firebaseapp.com",
-  databaseURL: "https://steam-35a18-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "steam-35a18",
-  storageBucket: "steam-35a18.firebasestorage.app",
-  messagingSenderId: "640872282829",
-  appId: "1:640872282829:web:fc79bc53e791f750778784"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
+            authDomain: "cloud-714ce.firebaseapp.com",
+            projectId: "cloud-714ce",
+            storageBucket: "cloud-714ce.firebasestorage.app",
+            messagingSenderId: "793151737559",
+            appId: "1:793151737559:web:7e7def7c8012bc91542a92"
+        };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = isClient ? firebase.firestore() : null;
