@@ -27,6 +27,9 @@
             font-size: 16px;
             user-select: none;
             -webkit-user-select: none;
+            /* 效能優化：減少重繪影響範圍 */
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
         }
 
         input, textarea, select, .selectable-cell {
@@ -38,6 +41,13 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: #0d1117; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
         
+        /* 滾動效能優化 */
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #0d1117;
+            will-change: scroll-position;
+        }
+
         .animate-text-shimmer {
             background: linear-gradient(to right, #818cf8, #22d3ee, #fb7185, #818cf8);
             background-size: 200% auto;
@@ -47,6 +57,7 @@
             animation: shimmer 4s linear infinite;
         }
         @keyframes shimmer { to { background-position: 200% center; } }
+        
         .dragging {
             opacity: 0.5;
             background: rgba(79, 70, 229, 0.2) !important;
@@ -83,12 +94,11 @@
             border-radius: 4px;
         }
 
-        /* 彈窗欄位對齊優化 */
         .modal-field-container {
             display: grid;
-            grid-template-cols: 70px 1fr; /* 縮窄中文標籤寬度 */
+            grid-template-cols: 70px 1fr;
             align-items: center;
-            gap: 0.5rem; /* 縮小中文與格子的間距，確保緊貼 */
+            gap: 0.5rem;
         }
         .modal-input-base {
             background: rgba(0,0,0,0.4);
@@ -102,12 +112,19 @@
             background: rgba(0,0,0,0.6);
             outline: none;
         }
+
+        /* 列表GPU加速 */
+        tr {
+            backface-visibility: hidden;
+            transform: translateZ(0);
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
+        // 引入 useDeferredValue 進行搜尋優化
+        const { useState, useEffect, useRef, useMemo, memo, useCallback, useDeferredValue } = React;
         
         const isClient = typeof window !== 'undefined';
         const APP_ID = 'steam-stats-v4';
@@ -207,7 +224,7 @@
                         
                         <td className="px-4 py-3">
                             <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
-                                {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
+                                {g.cover ? <img src={g.cover} className="w-full h-full object-contain" loading="lazy" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
                             </div>
                         </td>
                         <td className="px-6 py-8 text-center selectable-cell">
@@ -292,7 +309,6 @@
         });
 
         function App() {
-            // 1. 狀態定義
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
@@ -308,10 +324,13 @@
             const [formData, setFormData] = useState({ name: '', addedBy: '', price: '0', currency: 'HK$', url: '', cover: null, parentId: '' });
             const [notification, setNotification] = useState(null);
             const [searchQuery, setSearchQuery] = useState(''); 
+            
+            // 優化：搜尋延遲處理
+            const deferredSearchQuery = useDeferredValue(searchQuery);
+
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
             const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥"]);
-            const [newCurrencyInput, setNewCurrencyInput] = useState('');
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
@@ -327,7 +346,6 @@
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
-            const searchRef = useRef(null);
 
             const paths = useMemo(() => ({
                 presence: `artifacts/${APP_ID}/public/data/presence`,
@@ -337,7 +355,6 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
-            // 2. 核心功能函式
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
@@ -465,23 +482,6 @@
                 setNewPersonnelInput({ gameId: null, name: '' });
             }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels]);
 
-            const handleAddCurrency = useCallback(async () => {
-                const cur = newCurrencyInput.trim().toUpperCase();
-                if (cur && !currencies.includes(cur)) {
-                    const next = [...currencies, cur];
-                    setCurrencies(next); setNewCurrencyInput('');
-                    await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
-                }
-            }, [newCurrencyInput, currencies, paths]);
-
-            const handleRemoveCurrency = useCallback(async (cur) => {
-                if (currencies.length <= 1) return;
-                const next = currencies.filter(c => c !== cur);
-                setCurrencies(next);
-                await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
-            }, [currencies, paths]);
-
-            // 3. 計算屬性
             const statusOptions = useMemo(() => {
                 return statusLabels.map(l => ({
                     id: l.id,
@@ -517,8 +517,9 @@
                     const matchedGameIds = allUserStatuses.filter(s => s.userName === activeFilter.userName && s.status === activeFilter.statusId).map(s => s.gameId);
                     list = list.filter(g => matchedGameIds.includes(g.id));
                 }
-                if (searchQuery.trim()) {
-                    const q = searchQuery.toLowerCase();
+                // 使用 deferredSearchQuery 優化效能
+                if (deferredSearchQuery.trim()) {
+                    const q = deferredSearchQuery.toLowerCase();
                     list = list.filter(g => (g.name || "").toLowerCase().includes(q));
                 }
                 list.sort((a, b) => {
@@ -533,7 +534,7 @@
                 const children = {};
                 list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
                 return { roots, children };
-            }, [games, searchQuery, sortConfig, activeFilter, allUserStatuses]);
+            }, [games, deferredSearchQuery, sortConfig, activeFilter, allUserStatuses]);
 
             const allMembersStats = useMemo(() => {
                 return tableMemberNames.map(name => {
@@ -544,7 +545,6 @@
                 });
             }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
-            // 4. 副作用與監聽
             useEffect(() => {
                 if (isClient) {
                     setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
@@ -552,11 +552,15 @@
                 }
             }, []);
 
+            // 優化：圖示更新機制
             useEffect(() => {
                 if (isClient && window.lucide) {
-                    try { window.lucide.createIcons(); } catch (e) {}
+                    try { 
+                        // 僅在必要時渲染
+                        window.lucide.createIcons(); 
+                    } catch (e) {}
                 }
-            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies]);
+            }, [games.length, isModalOpen, expandedGroups.size, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies.length]);
 
             useEffect(() => {
                 if (!isClient || !auth) return;
@@ -626,7 +630,6 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
-            // 5. 渲染
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -775,7 +778,6 @@
                         </div>
                     </div>
 
-                    {/* 修改狀態分組與顏色設定彈窗 */}
                     {isStatusSettingsOpen && (
                         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
@@ -824,20 +826,15 @@
                         </div>
                     )}
 
-                    {/* 修改後的 (修改/錄入) 彈窗佈局 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-sm">
-                                {/* 頂部裝飾條 */}
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-right from-cyan-500 to-indigo-600"></div>
-                                
-                                {/* 關閉按鈕 */}
                                 <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10">
                                     <Icon name="x" className="w-5 h-5" />
                                 </button>
 
                                 <div className="p-6 md:p-8">
-                                    {/* 標題區域 - 還原中文標題並精確靠左對齊 */}
                                     <div className="mb-6 -ml-2 flex items-baseline gap-4">
                                         <h3 className="text-2xl font-black italic tracking-tighter flex items-center gap-2 underline decoration-cyan-400/30 decoration-4">
                                             <span>{editingId ? '修改' : '錄入'}</span>
@@ -848,7 +845,6 @@
                                     
                                     <form onSubmit={handleSaveGame} className="space-y-4">
                                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                                            {/* 左側封面區 - 保持縮小格式 */}
                                             <div className="md:col-span-4 flex flex-col items-center justify-start">
                                                 <div className="w-full max-w-[120px] group relative">
                                                     <div className="absolute inset-0 bg-cyan-500/10 blur-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -868,9 +864,7 @@
                                                 </div>
                                             </div>
 
-                                            {/* 右側資料區 - 標籤與格子距離進一步縮小 */}
                                             <div className="md:col-span-8 space-y-3">
-                                                {/* 提起人 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">提起人</label>
                                                     <select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}>
@@ -879,7 +873,6 @@
                                                     </select>
                                                 </div>
 
-                                                {/* 遊戲名稱 */}
                                                 <div className="modal-field-container items-start">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left mt-2.5">遊戲名稱</label>
                                                     <textarea 
@@ -892,7 +885,6 @@
                                                     />
                                                 </div>
 
-                                                {/* 商店網址 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">商店網址</label>
                                                     <div className="relative">
@@ -906,7 +898,6 @@
                                                     </div>
                                                 </div>
 
-                                                {/* 價格設定 - 標籤就在 HK$ 格子左方 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">價格設定</label>
                                                     <div className="flex w-fit items-stretch overflow-hidden rounded bg-black/40 border-b-2 border-slate-800 focus-within:border-cyan-400 transition-all">
@@ -932,7 +923,6 @@
                                             </div>
                                         </div>
                                         
-                                        {/* 按鈕區域 */}
                                         <div className="pt-4 flex gap-4">
                                             <button 
                                                 type="button" 
@@ -954,7 +944,6 @@
                         </div>
                     )}
 
-                    {/* 添加人員彈窗 */}
                     {newPersonnelInput.gameId && (
                         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
