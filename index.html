@@ -10,7 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase SDK (Compat) -->
+    <!-- Firebase SDK (Compat) - Using official CDNs for reliability -->
     <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://gs.jurieo.com/gemini/gstatic/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -110,7 +110,7 @@
         const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
         
         const isClient = typeof window !== 'undefined';
-        const APP_ID = 'steam-stats-v4';
+        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v4';
 
         const safeGetStorage = (key, fallback) => {
             if (!isClient) return fallback;
@@ -156,14 +156,9 @@
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
-        const firebaseConfig = {
-  apiKey: "AIzaSyCUKIWAj3yDEVl-9s0J6dsuWv3fZ4mVKlw",
-  authDomain: "coffee-spark-ai-barista-ab434.firebaseapp.com",
-  projectId: "coffee-spark-ai-barista-ab434",
-  storageBucket: "coffee-spark-ai-barista-ab434.firebasestorage.app",
-  messagingSenderId: "447263468848",
-  appId: "1:447263468848:web:6ee534757a0342c394acf5"
-};
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : { apiKey: "" };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = isClient ? firebase.firestore() : null;
@@ -431,25 +426,52 @@
             }, [isEditLocked, db, paths, showNotify]);
 
             const handleExportData = useCallback(() => {
-                const backup = { version: "6.4", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
+                const backup = { version: "6.5", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
                 const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
             }, [games, allUserStatuses, statusLabels, currencies]);
 
+            // 修正匯入邏輯：確保人員狀態與設置也能同步還原
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file || !db) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
+                        
+                        // 1. 還原遊戲數據
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                await db.collection(paths.games).doc(id || undefined).set(gd, { merge: true });
+                                await db.collection(paths.games).doc(id).set(gd, { merge: true });
                             }
                         }
-                        showNotify("導入完成");
-                    } catch (err) { showNotify("導入失敗"); }
+
+                        // 2. 還原人員狀態 (修正點)
+                        if (data.statuses) {
+                            for (const s of data.statuses) {
+                                const { id, ...sd } = s;
+                                // 使用備份中的 id，若無則組合 gameId_userId
+                                const docId = id || `${sd.gameId}_${sd.userId}`;
+                                await db.collection(paths.statuses).doc(docId).set(sd, { merge: true });
+                            }
+                        }
+
+                        // 3. 還原標籤與全局設置
+                        if (data.settings) {
+                            if (data.settings.statusLabels) {
+                                await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
+                            }
+                            if (data.settings.currencies) {
+                                await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
+                            }
+                        }
+
+                        showNotify("資料庫完整還原成功");
+                    } catch (err) { 
+                        console.error("Import error:", err);
+                        showNotify("導入失敗"); 
+                    }
                 };
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
@@ -560,43 +582,68 @@
 
             useEffect(() => {
                 if (!isClient || !auth) return;
+                
                 const initAuth = async () => {
-                    try { await auth.signInAnonymously(); } catch (e) {}
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) {
+                        console.error("Auth initialization failed:", e);
+                    }
                 };
                 initAuth();
+                
                 const unsub = auth.onAuthStateChanged(u => setUser(u));
                 return () => unsub();
             }, []);
 
             useEffect(() => {
                 if (!isClient || !user || !db) return;
+                
                 const updatePresence = () => {
-                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                    db.collection(paths.presence).doc(user.uid).set({ 
+                        uid: user.uid, 
+                        name: userName, 
+                        color: userColor, 
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true });
                 };
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 30000);
+                
                 const unsubP = db.collection(paths.presence).onSnapshot(snap => {
                     const list = []; const now = Date.now();
                     snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
                     setOnlineUsers(list);
-                });
+                }, err => console.error("Presence sync error:", err));
+                
                 const unsubL = db.collection(paths.logs).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                     setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                });
+                }, err => console.error("Logs sync error:", err));
+                
                 const unsubG = db.collection(paths.games).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setGames(data); setIsLoadingGames(false);
-                });
+                }, err => console.error("Games sync error:", err));
+                
                 const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(data);
-                });
-                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
+                }, err => console.error("Status sync error:", err));
+                
+                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
+                }, err => console.error("Labels sync error:", err));
+                
                 const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => {
                     if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
-                });
+                }, err => console.error("Global settings sync error:", err));
+                
                 return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
             }, [user, userName, userColor, paths]);
 
@@ -636,7 +683,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.1</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -828,16 +875,13 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-sm">
-                                {/* 頂部裝飾條 */}
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-right from-cyan-500 to-indigo-600"></div>
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-indigo-600"></div>
                                 
-                                {/* 關閉按鈕 */}
                                 <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10">
                                     <Icon name="x" className="w-5 h-5" />
                                 </button>
 
                                 <div className="p-6 md:p-8">
-                                    {/* 標題區域 - 還原中文標題並精確靠左對齊 */}
                                     <div className="mb-6 -ml-2 flex items-baseline gap-4">
                                         <h3 className="text-2xl font-black italic tracking-tighter flex items-center gap-2 underline decoration-cyan-400/30 decoration-4">
                                             <span>{editingId ? '修改' : '錄入'}</span>
@@ -848,7 +892,6 @@
                                     
                                     <form onSubmit={handleSaveGame} className="space-y-4">
                                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                                            {/* 左側封面區 - 保持縮小格式 */}
                                             <div className="md:col-span-4 flex flex-col items-center justify-start">
                                                 <div className="w-full max-w-[120px] group relative">
                                                     <div className="absolute inset-0 bg-cyan-500/10 blur-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -868,9 +911,7 @@
                                                 </div>
                                             </div>
 
-                                            {/* 右側資料區 - 標籤與格子距離進一步縮小 */}
                                             <div className="md:col-span-8 space-y-3">
-                                                {/* 提起人 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">提起人</label>
                                                     <select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}>
@@ -879,7 +920,6 @@
                                                     </select>
                                                 </div>
 
-                                                {/* 遊戲名稱 */}
                                                 <div className="modal-field-container items-start">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left mt-2.5">遊戲名稱</label>
                                                     <textarea 
@@ -892,7 +932,6 @@
                                                     />
                                                 </div>
 
-                                                {/* 商店網址 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">商店網址</label>
                                                     <div className="relative">
@@ -906,7 +945,6 @@
                                                     </div>
                                                 </div>
 
-                                                {/* 價格設定 - 標籤就在 HK$ 格子左方 */}
                                                 <div className="modal-field-container">
                                                     <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">價格設定</label>
                                                     <div className="flex w-fit items-stretch overflow-hidden rounded bg-black/40 border-b-2 border-slate-800 focus-within:border-cyan-400 transition-all">
@@ -932,7 +970,6 @@
                                             </div>
                                         </div>
                                         
-                                        {/* 按鈕區域 */}
                                         <div className="pt-4 flex gap-4">
                                             <button 
                                                 type="button" 
