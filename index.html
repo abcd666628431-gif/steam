@@ -163,7 +163,6 @@
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Firebase 配置
         const firebaseConfig = {
             apiKey: "AIzaSyDNYdJPpz9_7nC8eqdKxzQw3r_HSuc95ck",
             authDomain: "steam2-43c65.firebaseapp.com",
@@ -237,19 +236,19 @@
             );
         });
 
-        // 修改：匯率換算函數，現在主要支持「從外幣換算回港幣」
+        // 換算邏輯：外幣轉港幣
         const convertToHKD = (foreignVal, foreignCcy, rates) => {
             if (!foreignVal || isNaN(foreignVal)) return foreignVal;
             const num = parseFloat(foreignVal);
-            const rmbRate = parseFloat(rates.HKD_RMB) || 0.92;
-            const rubRate = parseFloat(rates.HKD_RUB) || 12.0;
-            const inrRate = parseFloat(rates.HKD_INR) || 10.5;
+            const rmbRate = parseFloat(rates.HKD_RMB) || 1;
+            const rubRate = parseFloat(rates.HKD_RUB) || 1;
+            const inrRate = parseFloat(rates.HKD_INR) || 1;
 
-            if (foreignCcy === 'RMB' || foreignCcy === 'CN¥') return (num / rmbRate).toFixed(1);
-            if (foreignCcy === 'руб') return (num / rubRate).toFixed(1);
+            if (foreignCcy === 'RMB¥') return (num / rmbRate).toFixed(1);
+            if (foreignCcy === 'РУБ₽') return (num / rubRate).toFixed(1);
             if (foreignCcy === 'INR₹') return (num / inrRate).toFixed(1);
             
-            return foreignVal; // 沒匹配到則維持原樣
+            return foreignVal; 
         };
 
         const GameRow = memo(({ 
@@ -323,10 +322,10 @@
                                             <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
                                                 {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                                             </select>
-                                            {/* 第一格：HK$ (不觸發對外換算) */}
+                                            {/* 第一格 */}
                                             {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
                                                 <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
-                                                    <select value={p.purchaseCurrency || currencies[0]} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
+                                                    <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
                                                         {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                                                     </select>
                                                     <LocalNumberInput defaultValue={p.purchasePrice || 0} 
@@ -336,19 +335,18 @@
                                                     {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
                                                 </div>
                                             ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
+                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
                                             )}
-                                            {/* 第二格：外幣 (觸發對第一格 HK$ 的自動換算) */}
+                                            {/* 第二格 (觸發自動換算至第一格) */}
                                             {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
                                                 <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
-                                                    <select value={p.purchaseCurrency2 || currencies[2] || 'US$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
+                                                    <select value={p.purchaseCurrency2 || 'RMB¥'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
                                                         {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                                                     </select>
                                                     <LocalNumberInput defaultValue={p.purchasePrice2 || 0} 
                                                         onConfirm={(v) => {
                                                             const updates = { purchasePrice2: v, userName: p.userName };
-                                                            // 邏輯：根據匯率自動更新第一格 HK$
-                                                            const hkdValue = convertToHKD(v, p.purchaseCurrency2, rates);
+                                                            const hkdValue = convertToHKD(v, p.purchaseCurrency2 || 'RMB¥', rates);
                                                             if (hkdValue !== null) updates.purchasePrice = hkdValue;
                                                             onStatusUpdate(g.id, p.userId, updates);
                                                         }} 
@@ -357,7 +355,7 @@
                                                     {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />}
                                                 </div>
                                             ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: currencies[2]||'US$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
+                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: 'RMB¥', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
                                             )}
                                             <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                         </div>
@@ -405,7 +403,7 @@
             const [searchQuery, setSearchQuery] = useState(''); 
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
-            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB", "руб", "INR₹"]);
+            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB¥", "РУБ₽", "INR₹"]);
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
@@ -422,10 +420,11 @@
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
             const [isPageVisible, setIsPageVisible] = useState(true);
-            
-            // 匯率系統狀態
             const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
             const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
+            
+            // 重要：配額保護狀態
+            const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -441,10 +440,10 @@
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user) {
+                if(isClient && db && user && !isQuotaExceeded) {
                     db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
                 }
-            }, [userName, user, paths]);
+            }, [userName, user, paths, isQuotaExceeded]);
 
             const handleToggleGroup = useCallback((id) => {
                 setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -468,14 +467,14 @@
             }, [currencies]);
 
             const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
-                if (!isClient || !user || !db) return;
+                if (!isClient || !user || !db || isQuotaExceeded) return;
                 const docId = `${gameId}_${targetUserId}`;
                 if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
-            }, [user, userColor, userName, paths]);
+            }, [user, userColor, userName, paths, isQuotaExceeded]);
 
             const handleUpdateAchievements = async () => {
-                if (!db || !achievementEdit.userId || !achievementEdit.gameId) return;
+                if (!db || !achievementEdit.userId || !achievementEdit.gameId || isQuotaExceeded) return;
                 const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                 try {
                     await db.collection(paths.statuses).doc(docId).update({ achTotal: parseInt(achievementEdit.total) || 0, achCompleted: parseInt(achievementEdit.completed) || 0 });
@@ -487,25 +486,25 @@
 
             const handleUpdateLabels = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!db) return;
+                if (!db || isQuotaExceeded) return;
                 try {
                     await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
                     setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
                 } catch (err) { showNotify("儲存失敗"); }
-            }, [statusLabels, paths, showNotify]);
+            }, [statusLabels, paths, showNotify, isQuotaExceeded]);
             
             const handleUpdateRates = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!db) return;
+                if (!db || isQuotaExceeded) return;
                 try {
                     await db.collection(paths.settings).doc('rates').set(exchangeRates);
                     setIsRatesModalOpen(false); showNotify("匯率已同步");
                 } catch (err) { showNotify("匯率儲存失敗"); }
-            }, [exchangeRates, paths, showNotify]);
+            }, [exchangeRates, paths, showNotify, isQuotaExceeded]);
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!formData.name.trim() || !user || !db) return;
+                if (!formData.name.trim() || !user || !db || isQuotaExceeded) return;
                 try {
                     if (editingId) {
                         await db.collection(paths.games).doc(editingId).update({
@@ -524,11 +523,11 @@
                     }
                     showNotify("同步成功"); closeModal();
                 } catch (err) { showNotify("同步失敗"); }
-            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
+            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify, isQuotaExceeded]);
 
             const handleUpdateOrder = async (id, val, pId = "") => {
                 const order = parseInt(val);
-                if (isNaN(order) || !db) return;
+                if (isNaN(order) || !db || isQuotaExceeded) return;
                 try {
                     const batch = db.batch();
                     const siblings = games.filter(g => (g.parentId || "") === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -544,7 +543,7 @@
             };
 
             const handleNormalizeOrders = async () => {
-                if (!db) return;
+                if (!db || isQuotaExceeded) return;
                 try {
                     const batch = db.batch();
                     const sortedRoots = [...games.filter(g => !g.parentId)].sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -565,7 +564,7 @@
             };
 
             const handleDrop = async (targetIdx, targetParentId) => {
-                if (!draggedId || !db || draggedParentId !== targetParentId) return;
+                if (!draggedId || !db || draggedParentId !== targetParentId || isQuotaExceeded) return;
                 const batch = db.batch();
                 const siblings = games.filter(g => (g.parentId || "") === targetParentId).sort((a, b) => (a.order || 0) - (b.order || 0));
                 const newOrderList = [...siblings];
@@ -577,13 +576,13 @@
             };
 
             const handleDeleteGame = useCallback(async (game) => {
-                if(!db || !confirm(`確定刪除 ${game.name}?`)) return;
+                if(!db || !confirm(`確定刪除 ${game.name}?`) || isQuotaExceeded) return;
                 try {
                     await db.collection(paths.games).doc(game.id).delete();
                     logActivity("刪除", game.name);
                     showNotify("已刪除");
                 } catch (e) { showNotify("刪除失敗"); }
-            }, [db, paths, logActivity, showNotify]);
+            }, [db, paths, logActivity, showNotify, isQuotaExceeded]);
 
             const handleExportData = useCallback(() => {
                 const backup = { version: "6.6", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
@@ -592,7 +591,7 @@
             }, [games, allUserStatuses, statusLabels, currencies]);
 
             const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file || !db) return;
+                const file = e.target.files[0]; if (!file || !db || isQuotaExceeded) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
@@ -627,7 +626,7 @@
                     } catch (err) { showNotify("還原失敗"); }
                 };
                 reader.readAsText(file);
-            }, [db, paths, showNotify]);
+            }, [db, paths, showNotify, isQuotaExceeded]);
 
             const statusOptions = useMemo(() => statusLabels.map(l => ({ id: l.id, label: l.label })), [statusLabels]);
             const tableMemberNames = useMemo(() => {
@@ -696,7 +695,9 @@
             useEffect(() => {
                 if (!isClient || !auth) return;
                 const initAuth = async () => {
-                    try { await auth.signInAnonymously(); } catch (e) { showNotify("身份驗證失敗"); }
+                    try { await auth.signInAnonymously(); } catch (e) {
+                        console.error("Auth Error:", e);
+                    }
                 };
                 initAuth();
                 const unsub = auth.onAuthStateChanged(u => setUser(u));
@@ -710,71 +711,82 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
-            // 增量同步數據
+            // --- 流量與配額核心優化 ---
             useEffect(() => {
-                if (!isClient || !user || !db || !isPageVisible) return;
-                let activeUnsubscribers = [];
-                const handleError = (err) => { if (err.code === 'permission-denied') showNotify("⚠️ 權限不足"); };
-
-                activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
-                    setGames(prev => {
-                        let next = [...prev];
-                        let hasChanges = false;
-                        snap.docChanges().forEach(change => {
-                            const data = { id: change.doc.id, ...change.doc.data() };
-                            if (change.type === "added") { if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; } }
-                            else if (change.type === "modified") {
-                                const i = next.findIndex(g => g.id === data.id);
-                                if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                            } else if (change.type === "removed") { next = next.filter(g => g.id !== data.id); hasChanges = true; }
-                        });
-                        return hasChanges ? next : prev;
-                    });
-                    setIsLoadingGames(false);
-                }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
-                    setAllUserStatuses(prev => {
-                        let next = [...prev];
-                        let hasChanges = false;
-                        snap.docChanges().forEach(change => {
-                            const data = { id: change.doc.id, ...change.doc.data() };
-                            if (change.type === "added") { if (!next.find(s => s.id === data.id)) { next.push(data); hasChanges = true; } }
-                            else if (change.type === "modified") { 
-                                const i = next.findIndex(s => s.id === data.id); 
-                                if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                            } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
-                        });
-                        return hasChanges ? next : prev;
-                    });
-                }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.logs).limit(10).onSnapshot(snap => {
-                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                    setActivityLogs(logs); setIsLoadingLogs(false);
-                }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
-                    const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                    setOnlineUsers(list);
-                }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, handleError));
-                activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); }, handleError));
+                if (!isClient || !user || !db || !isPageVisible || isQuotaExceeded) return;
                 
-                // 匯率同步
-                activeUnsubscribers.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => {
-                    if (doc.exists) setExchangeRates(doc.data());
-                }, handleError));
+                let activeUnsubscribers = [];
+                const handleError = (err) => {
+                    console.error("Firestore Error:", err);
+                    if (err.code === 'resource-exhausted') {
+                        setIsQuotaExceeded(true);
+                        showNotify("⚠️ 配額超出 (Quota Exceeded)，已暫停雲端同步");
+                    }
+                };
 
+                const subscribe = () => {
+                    // 增量監聽遊戲數據
+                    activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
+                        setGames(prev => {
+                            let next = [...prev];
+                            let hasChanges = false;
+                            snap.docChanges().forEach(change => {
+                                const data = { id: change.doc.id, ...change.doc.data() };
+                                if (change.type === "added") { 
+                                    if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; }
+                                } else if (change.type === "modified") {
+                                    const i = next.findIndex(g => g.id === data.id);
+                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
+                                } else if (change.type === "removed") {
+                                    next = next.filter(g => g.id !== data.id); hasChanges = true;
+                                }
+                            });
+                            return hasChanges ? next : prev;
+                        });
+                        setIsLoadingGames(false);
+                    }, handleError));
+
+                    // 增量監聽狀態數據
+                    activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
+                        setAllUserStatuses(prev => {
+                            let next = [...prev];
+                            let hasChanges = false;
+                            snap.docChanges().forEach(change => {
+                                const data = { id: change.doc.id, ...change.doc.data() };
+                                if (change.type === "added") { if (!next.find(s => s.id === data.id)) { next.push(data); hasChanges = true; } }
+                                else if (change.type === "modified") { 
+                                    const i = next.findIndex(s => s.id === data.id); 
+                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
+                                } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
+                            });
+                            return hasChanges ? next : prev;
+                        });
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.logs).limit(10).onSnapshot(snap => {
+                        const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                        logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                        setActivityLogs(logs); setIsLoadingLogs(false);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
+                        const list = []; const now = Date.now();
+                        snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                        setOnlineUsers(list);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, handleError));
+                    activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); }, handleError));
+                    activeUnsubscribers.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); }, handleError));
+                };
+
+                subscribe();
                 return () => activeUnsubscribers.forEach(unsub => unsub());
-            }, [user, paths, isPageVisible]);
+            }, [user, paths, isPageVisible, isQuotaExceeded]);
 
-            // 在線心跳
+            // 在線心跳：60 秒一次
             useEffect(() => {
-                if (!isClient || !user || !db) return;
+                if (!isClient || !user || !db || isQuotaExceeded) return;
                 const updatePresence = () => {
                     if (document.visibilityState === 'hidden' || !navigator.onLine) return;
                     db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
@@ -782,17 +794,20 @@
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 60000); 
                 return () => clearInterval(heartbeat);
-            }, [user, userName, userColor, paths]);
+            }, [user, userName, userColor, paths, isQuotaExceeded]);
 
             useEffect(() => { if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} } }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm, isPageVisible, isRatesModalOpen]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
-                    {!isPageVisible && (
+                    {(isQuotaExceeded || !isPageVisible) && (
                         <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-cyan-400 font-black">
-                            <Icon name="zap-off" className="w-12 h-12 mb-4 animate-pulse" />
-                            <p className="text-xl tracking-widest uppercase">休眠節能中</p>
-                            <p className="text-xs text-slate-500 mt-2">點擊頁面恢復同步</p>
+                            <Icon name={isQuotaExceeded ? "alert-triangle" : "zap-off"} className="w-12 h-12 mb-4 animate-pulse text-amber-500" />
+                            <p className="text-xl tracking-widest uppercase">{isQuotaExceeded ? "Firebase 配額已達上限" : "系統休眠中 (省流量模式)"}</p>
+                            <p className="text-xs text-slate-500 mt-2">{isQuotaExceeded ? "請等待配額重置後重整頁面" : "請點擊頁面恢復實時同步"}</p>
+                            {isQuotaExceeded && (
+                                <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 border border-white/10 rounded text-xs">手動重新連接</button>
+                            )}
                         </div>
                     )}
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -883,7 +898,7 @@
                                             <th className="px-2 w-12"></th>
                                             <th className="px-1 py-5 w-20 text-center">
                                                 <div className="flex items-center justify-center gap-1.5">
-                                                    {!isEditLocked && (<Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400 transition-colors" onClick={() => setShowNormalizeConfirm(true)} />)}
+                                                    {!isEditLocked && (<Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400 transition-colors" title="重新排列編號並補齊缺失" onClick={() => setShowNormalizeConfirm(true)} />)}
                                                     <span className="cursor-pointer hover:text-white" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</span>
                                                 </div>
                                             </th>
@@ -930,34 +945,17 @@
                         </div>
                     </div>
 
-                    {/* 匯率設定彈窗 */}
+                    {/* 匯率設定 */}
                     {isRatesModalOpen && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border border-green-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative">
-                                <h3 className="text-xl font-black mb-6 italic text-green-400 uppercase tracking-widest flex items-center gap-2">
-                                    <Icon name="banknote" className="w-5 h-5" /> 手動匯率設定
-                                </h3>
-                                <div className="space-y-5">
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > RMB (人民幣)</label>
-                                        <input type="number" step="0.01" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
-                                            value={exchangeRates.HKD_RMB} onChange={e => setExchangeRates({...exchangeRates, HKD_RMB: e.target.value})} />
-                                    </div>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > руб (盧布)</label>
-                                        <input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
-                                            value={exchangeRates.HKD_RUB} onChange={e => setExchangeRates({...exchangeRates, HKD_RUB: e.target.value})} />
-                                    </div>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > INR₹ (盧比)</label>
-                                        <input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
-                                            value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} />
-                                    </div>
+                            <div className="bg-[#0b0e14] border border-green-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center">
+                                <h3 className="text-xl font-black mb-6 italic text-green-400 uppercase tracking-widest flex items-center justify-center gap-2"><Icon name="banknote" className="w-5 h-5" /> 匯率設定</h3>
+                                <div className="space-y-4">
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = RMB¥</label><input type="number" step="0.01" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RMB} onChange={e => setExchangeRates({...exchangeRates, HKD_RMB: e.target.value})} /></div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = РУБ₽</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RUB} onChange={e => setExchangeRates({...exchangeRates, HKD_RUB: e.target.value})} /></div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = INR₹</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} /></div>
                                 </div>
-                                <div className="flex gap-4 mt-8">
-                                    <button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button>
-                                    <button onClick={handleUpdateRates} className="flex-1 py-3 bg-green-600 text-black font-black rounded shadow-lg uppercase text-sm">儲存同步</button>
-                                </div>
+                                <div className="flex gap-4 mt-8"><button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button onClick={handleUpdateRates} className="flex-1 py-3 bg-green-600 text-black font-black rounded shadow-lg uppercase text-sm">儲存同步</button></div>
                             </div>
                         </div>
                     )}
@@ -976,7 +974,6 @@
                         </div>
                     )}
 
-                    {/* 成就數據編輯彈窗 */}
                     {achievementEdit.gameId && (
                         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}>
                             <div className="bg-[#0b0e14] border border-amber-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center" onClick={(e) => e.stopPropagation()}>
@@ -1075,7 +1072,7 @@
                                 {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
                                 <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black rounded uppercase">取消</button><button onClick={async () => {
                                     const n = newPersonnelInput.name.trim(); if(!n || n === "_manual_") return;
-                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: currencies[0], achTotal: 0, achCompleted: 0 });
+                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: 'HK$', achTotal: 0, achCompleted: 0 });
                                     setNewPersonnelInput({ gameId: null, name: '' });
                                 }} className="flex-1 py-2 bg-indigo-600 text-xs font-black rounded uppercase">確認添加</button></div>
                             </div>
