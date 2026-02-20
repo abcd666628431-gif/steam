@@ -130,7 +130,6 @@
         const isClient = typeof window !== 'undefined';
         const APP_ID = 'steam-stats-v4';
 
-        // --- 全域工具函數 ---
         const formatDate = (ts) => { 
             if (!ts) return "LIVE"; 
             const date = new Date(ts.toMillis()); 
@@ -168,7 +167,6 @@
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // 已更新：最新的 Firebase 配置
         const firebaseConfig = {
             apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
             authDomain: "cloud-714ce.firebaseapp.com",
@@ -274,14 +272,14 @@
                 <React.Fragment>
                     <tr 
                         onDragOver={(e)=>e.preventDefault()} 
-                        onDrop={() => !isEditLocked && !isChild && onDrop(index)}
+                        onDrop={() => !isEditLocked && onDrop(index, g.parentId || "")}
                         onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))}
                         className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
                         
                         <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
                             <div className="flex flex-col items-center gap-2">
-                                {!isEditLocked && !isChild && (
-                                    <div draggable onDragStart={() => onStartDrag(g.id, index)} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
+                                {!isEditLocked && (
+                                    <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
                                 )}
                                 {!isChild && hasChildren && (
                                     <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
@@ -289,10 +287,10 @@
                             </div>
                         </td>
                         <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
-                            {!isChild && (
+                            {!isChild ? (
                                 isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
-                                <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v)} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
-                            )}
+                                <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
+                            ) : null /* 子分組不顯示編號 */}
                         </td>
                         <td className="px-4 text-center">
                             <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
@@ -426,6 +424,7 @@
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
             const [draggedIdx, setDraggedIdx] = useState(null);
+            const [draggedParentId, setDraggedParentId] = useState("");
             const [activeFilter, setActiveFilter] = useState(null);
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
             const [statusLabels, setStatusLabels] = useState([
@@ -536,14 +535,15 @@
                 } catch (err) { showNotify("同步失敗"); }
             }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
 
-            const handleUpdateOrder = async (id, val) => {
+            // 編號順延更新邏輯 (升級：支援分組內部順延)
+            const handleUpdateOrder = async (id, val, pId = "") => {
                 const order = parseInt(val);
                 if (isNaN(order) || !db) return;
 
                 try {
                     const batch = db.batch();
-                    const roots = games.filter(g => !g.parentId).sort((a, b) => (a.order || 0) - (b.order || 0));
-                    roots.forEach(g => {
+                    const siblings = games.filter(g => (g.parentId || "") === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
+                    siblings.forEach(g => {
                         if (g.id !== id && (g.order || 0) >= order) {
                             batch.update(db.collection(paths.games).doc(g.id), { order: (g.order || 0) + 1 });
                         }
@@ -560,10 +560,19 @@
                 if (!db) return;
                 try {
                     const batch = db.batch();
+                    // 校正根遊戲
                     const sortedRoots = [...games.filter(g => !g.parentId)].sort((a, b) => (a.order || 0) - (b.order || 0));
-                    
                     sortedRoots.forEach((g, idx) => {
                         batch.update(db.collection(paths.games).doc(g.id), { order: idx + 1 });
+                    });
+                    
+                    // 校正所有子分組 DLC
+                    const parents = new Set(games.filter(g => g.parentId).map(g => g.parentId));
+                    parents.forEach(pId => {
+                        const sortedChildren = games.filter(g => g.parentId === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
+                        sortedChildren.forEach((child, idx) => {
+                            batch.update(db.collection(paths.games).doc(child.id), { order: idx + 1 });
+                        });
                     });
                     
                     await batch.commit();
@@ -572,6 +581,32 @@
                 } catch (e) {
                     showNotify("校正失敗");
                 }
+            };
+
+            const handleStartDrag = (id, idx, pId) => {
+                setDraggedId(id);
+                setDraggedIdx(idx);
+                setDraggedParentId(pId);
+            };
+
+            const handleDrop = async (targetIdx, targetParentId) => {
+                if (!draggedId || !db) return;
+                // 僅允許在同一層級內拖拽排序
+                if (draggedParentId !== targetParentId) return;
+
+                const batch = db.batch();
+                const siblings = games.filter(g => (g.parentId || "") === targetParentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+                
+                const newOrderList = [...siblings];
+                const [removed] = newOrderList.splice(draggedIdx, 1);
+                newOrderList.splice(targetIdx, 0, removed);
+
+                newOrderList.forEach((item, idx) => {
+                    batch.update(db.collection(paths.games).doc(item.id), { order: idx + 1 });
+                });
+
+                await batch.commit();
+                setDraggedId(null);
             };
 
             const handleDeleteGame = useCallback(async (game) => {
@@ -661,7 +696,14 @@
                 });
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
-                list.filter(g => g.parentId).forEach(g => { if (!children[g.parentId]) children[g.parentId] = []; children[g.parentId].push(g); });
+                list.filter(g => g.parentId).forEach(g => { 
+                    if (!children[g.parentId]) children[g.parentId] = []; 
+                    children[g.parentId].push(g); 
+                });
+                // 排序 DLC
+                Object.keys(children).forEach(pId => {
+                    children[pId].sort((a, b) => (parseInt(a.order)||0) - (parseInt(b.order)||0));
+                });
                 return { roots, children };
             }, [games, searchQuery, sortConfig, activeFilter, allUserStatuses]);
 
@@ -916,13 +958,7 @@
                                                     g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
                                                     statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
                                                     personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
-                                                    onStartDrag={(id, idx) => { setDraggedId(id); setDraggedIdx(idx); }} 
-                                                    onDrop={(targetIdx) => {
-                                                        const newRoots = [...hierarchy.roots]; const [removed] = newRoots.splice(draggedIdx, 1);
-                                                        newRoots.splice(targetIdx, 0, removed);
-                                                        const batch = db.batch(); newRoots.forEach((root, idx) => batch.update(db.collection(paths.games).doc(root.id), { order: idx + 1 }));
-                                                        batch.commit();
-                                                    }}
+                                                    onStartDrag={handleStartDrag} onDrop={handleDrop}
                                                     onUpdateOrder={handleUpdateOrder}
                                                     onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }}
                                                     onNest={async (cid) => { if(draggedId && draggedId !== cid) await db.collection(paths.games).doc(draggedId).update({ parentId: cid }); }}
@@ -939,11 +975,13 @@
                                                         memberName: person.userName
                                                     })}
                                                 />
-                                                {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map(child => (
+                                                {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child, cIdx) => (
                                                     <GameRow 
-                                                        key={child.id} g={child} isChild={true} isEditLocked={isEditLocked}
+                                                        key={child.id} g={child} index={cIdx} isChild={true} isEditLocked={isEditLocked} draggedId={draggedId}
                                                         personnel={gamePersonnelMap[child.id] || []} nameColorMap={nameColorMap} currencies={currencies}
-                                                        statusOptions={statusOptions} onOpenEdit={openEditModal} onUpdateOrder={()=>{}} onStatusUpdate={handleStatusUpdate}
+                                                        statusOptions={statusOptions} onOpenEdit={openEditModal} 
+                                                        onStartDrag={handleStartDrag} onDrop={handleDrop}
+                                                        onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate}
                                                         onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
                                                         onDelete={handleDeleteGame} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                         onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
