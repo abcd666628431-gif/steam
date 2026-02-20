@@ -110,19 +110,7 @@
         const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
         
         const isClient = typeof window !== 'undefined';
-        
-        // 安全獲取環境變數，防止黑屏
-        const getAppId = () => {
-            try { return typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v5'; }
-            catch(e) { return 'steam-stats-v5'; }
-        };
-        const APP_ID = getAppId();
-
-        const getFirebaseConfig = () => {
-            try { return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "" }; }
-            catch(e) { return { apiKey: "" }; }
-        };
-        const firebaseConfig = getFirebaseConfig();
+        const APP_ID = 'steam-stats-v4';
 
         const safeGetStorage = (key, fallback) => {
             if (!isClient) return fallback;
@@ -166,6 +154,15 @@
             if (!ts) return "LIVE"; 
             const date = new Date(ts.toMillis()); 
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
+        };
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCUKIWAj3yDEVl-9s0J6dsuWv3fZ4mVKlw",
+            authDomain: "coffee-spark-ai-barista-ab434.firebaseapp.com",
+            projectId: "coffee-spark-ai-barista-ab434",
+            storageBucket: "coffee-spark-ai-barista-ab434.firebasestorage.app",
+            messagingSenderId: "447263468848",
+            appId: "1:447263468848:web:6ee534757a0342c394acf5"
         };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -314,6 +311,7 @@
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
             const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥"]);
+            const [newCurrencyInput, setNewCurrencyInput] = useState('');
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
@@ -329,6 +327,7 @@
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
+            const searchRef = useRef(null);
 
             const paths = useMemo(() => ({
                 presence: `artifacts/${APP_ID}/public/data/presence`,
@@ -338,6 +337,7 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
+            // 2. 核心功能函式
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
@@ -345,6 +345,19 @@
                     db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
                 }
             }, [userName, user, paths]);
+
+            const handleToggleGroup = useCallback((id) => {
+                setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
+            }, []);
+
+            const handleSetFilter = useCallback((name, sid) => {
+                setActiveFilter(prev => {
+                    if (prev?.userName === name && prev?.statusId === sid) return null;
+                    const labelObj = statusLabels.find(l => l.id === sid);
+                    showNotify(`飾選：${name} - ${labelObj?.label || sid}`);
+                    return { userName: name, statusId: sid };
+                });
+            }, [statusLabels, showNotify]);
 
             const closeModal = useCallback(() => { 
                 setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); 
@@ -369,6 +382,18 @@
                     setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
                 } catch (err) { showNotify("儲存失敗"); }
             }, [statusLabels, paths, showNotify]);
+
+            const addNewStatusGroup = () => {
+                const newId = `status_${Date.now()}`;
+                setStatusLabels([...statusLabels, { id: newId, label: '新分組', color: '#ffffff' }]);
+            };
+
+            const removeStatusGroup = (id) => {
+                if (statusLabels.length <= 1) return showNotify("至少需保留一個分組");
+                if (confirm("確定刪除此狀態分組？現有的統計數據可能不再顯示。")) {
+                    setStatusLabels(statusLabels.filter(l => l.id !== id));
+                }
+            };
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
@@ -397,43 +422,99 @@
                 } catch (e) { showNotify("刪除失敗"); }
             }, [db, paths, logActivity, showNotify]);
 
+            const handleNestGame = useCallback(async (childId, parentId) => {
+                if (isEditLocked || !childId || childId === parentId || !db) return;
+                try {
+                    await db.collection(paths.games).doc(childId).update({ parentId });
+                    showNotify("已放入分組");
+                } catch (e) { showNotify("分組失敗"); }
+            }, [isEditLocked, db, paths, showNotify]);
+
             const handleExportData = useCallback(() => {
                 const backup = { version: "6.5", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
                 const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
             }, [games, allUserStatuses, statusLabels, currencies]);
 
+            // 修正匯入功能：還原所有數據，包括人員狀態
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file || !db) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
+                        
+                        // 1. 還原遊戲庫數據
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                if(id) await db.collection(paths.games).doc(id).set(gd, { merge: true });
+                                if (id) await db.collection(paths.games).doc(id).set(gd, { merge: true });
                             }
                         }
+
+                        // 2. 還原人員購買狀態 (解決您提到的還原不完整問題)
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
+                                // 使用備份中的 id，若無則根據 gameId_userId 生成
                                 const docId = id || `${sd.gameId}_${sd.userId}`;
                                 await db.collection(paths.statuses).doc(docId).set(sd, { merge: true });
                             }
                         }
+
+                        // 3. 還原標籤設定與貨幣
                         if (data.settings) {
-                            if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
-                            if (data.settings.currencies) await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
+                            if (data.settings.statusLabels) {
+                                await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
+                            }
+                            if (data.settings.currencies) {
+                                await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
+                            }
                         }
-                        showNotify("備份已完整還原");
-                    } catch (err) { showNotify("還原失敗"); }
+
+                        showNotify("資料庫完整還原成功");
+                    } catch (err) { 
+                        console.error("還原失敗:", err);
+                        showNotify("導入失敗"); 
+                    }
                 };
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
 
+            const handleAddPersonnel = useCallback(async (gameId) => {
+                const name = newPersonnelInput.name.trim(); 
+                if (!name || name === "_manual_" || !db) return;
+                const targetUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                const defaultSid = statusLabels[0]?.id || 'unbought';
+                await handleStatusUpdate(gameId, targetUserId, { 
+                    userName: name, userColor: nameColorMap[name] || '#fff', status: defaultSid, purchasePrice: '0', purchaseCurrency: currencies[0] 
+                });
+                setNewPersonnelInput({ gameId: null, name: '' });
+            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels]);
+
+            const handleAddCurrency = useCallback(async () => {
+                const cur = newCurrencyInput.trim().toUpperCase();
+                if (cur && !currencies.includes(cur)) {
+                    const next = [...currencies, cur];
+                    setCurrencies(next); setNewCurrencyInput('');
+                    await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
+                }
+            }, [newCurrencyInput, currencies, paths]);
+
+            const handleRemoveCurrency = useCallback(async (cur) => {
+                if (currencies.length <= 1) return;
+                const next = currencies.filter(c => c !== cur);
+                setCurrencies(next);
+                await db.collection(paths.settings).doc('global').set({ currencies: next }, { merge: true });
+            }, [currencies, paths]);
+
+            // 3. 計算屬性
             const statusOptions = useMemo(() => {
-                return statusLabels.map(l => ({ id: l.id, label: l.label }));
+                return statusLabels.map(l => ({
+                    id: l.id,
+                    label: l.label,
+                    color: `text-white border-slate-500 bg-slate-700/30`
+                }));
             }, [statusLabels]);
 
             const tableMemberNames = useMemo(() => {
@@ -460,8 +541,8 @@
             const hierarchy = useMemo(() => {
                 let list = [...games];
                 if (activeFilter) {
-                    const matchedIds = allUserStatuses.filter(s => s.userName === activeFilter.userName && s.status === activeFilter.statusId).map(s => s.gameId);
-                    list = list.filter(g => matchedIds.includes(g.id));
+                    const matchedGameIds = allUserStatuses.filter(s => s.userName === activeFilter.userName && s.status === activeFilter.statusId).map(s => s.gameId);
+                    list = list.filter(g => matchedGameIds.includes(g.id));
                 }
                 if (searchQuery.trim()) {
                     const q = searchQuery.toLowerCase();
@@ -471,7 +552,9 @@
                     let valA = a[sortConfig.key]; let valB = b[sortConfig.key];
                     if (sortConfig.key === 'order') { valA = parseInt(valA)||0; valB = parseInt(valB)||0; } 
                     else { valA = (valA||"").toString().toLowerCase(); valB = (valB||"").toString().toLowerCase(); }
-                    return valA < valB ? (sortConfig.direction === 'asc' ? -1 : 1) : (sortConfig.direction === 'asc' ? 1 : -1);
+                    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                    return 0;
                 });
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
@@ -488,6 +571,7 @@
                 });
             }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
+            // 4. 副作用與監聽
             useEffect(() => {
                 if (isClient) {
                     setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
@@ -496,17 +580,15 @@
             }, []);
 
             useEffect(() => {
-                if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} }
+                if (isClient && window.lucide) {
+                    try { window.lucide.createIcons(); } catch (e) {}
+                }
             }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, isStatusSettingsOpen, activeFilter, currencies]);
 
             useEffect(() => {
                 if (!isClient || !auth) return;
                 const initAuth = async () => {
-                    try {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) await auth.signInWithCustomToken(token);
-                        else await auth.signInAnonymously();
-                    } catch (e) {}
+                    try { await auth.signInAnonymously(); } catch (e) {}
                 };
                 initAuth();
                 const unsub = auth.onAuthStateChanged(u => setUser(u));
@@ -519,43 +601,48 @@
                     db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 };
                 updatePresence();
-                const hb = setInterval(updatePresence, 30000);
-                const upP = db.collection(paths.presence).onSnapshot(snap => {
+                const heartbeat = setInterval(updatePresence, 30000);
+                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
                     const list = []; const now = Date.now();
                     snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
                     setOnlineUsers(list);
-                }, () => {});
-                const upL = db.collection(paths.logs).onSnapshot(snap => {
+                });
+                const unsubL = db.collection(paths.logs).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                     setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                }, () => {});
-                const upG = db.collection(paths.games).onSnapshot(snap => {
+                });
+                const unsubG = db.collection(paths.games).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setGames(data); setIsLoadingGames(false);
-                }, () => {});
-                const upS = db.collection(paths.statuses).onSnapshot(snap => {
+                });
+                const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(data);
-                }, () => {});
-                const upLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, () => {});
-                const upGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); }, () => {});
-                return () => { clearInterval(hb); upP(); upL(); upG(); upS(); upLabels(); upGlobal(); };
+                });
+                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
+                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => {
+                    if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
+                });
+                return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
             }, [user, userName, userColor, paths]);
 
             useEffect(() => {
                 if (!isModalOpen) return;
-                const handlePaste = async (e) => {
-                    const items = e.clipboardData?.items;
+                const handlePaste = async (event) => {
+                    const items = event.clipboardData?.items;
                     if (!items) return;
-                    for (let item of items) {
-                        if (item.type.indexOf("image") !== -1) {
-                            const blob = item.getAsFile();
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf("image") !== -1) {
+                            const blob = items[i].getAsFile();
+                            if (!blob) continue;
                             const reader = new FileReader();
-                            reader.onload = async (ev) => {
-                                const comp = await compressImage(ev.target.result);
-                                setFormData(p => ({ ...p, cover: comp }));
-                                showNotify("封面已貼上");
+                            reader.onload = async (e) => {
+                                try {
+                                    const compressed = await compressImage(e.target.result);
+                                    setFormData(prev => ({ ...prev, cover: compressed }));
+                                    showNotify("封面已貼上");
+                                } catch (err) { showNotify("圖片壓縮失敗"); }
                             };
                             reader.readAsDataURL(blob);
                             break; 
@@ -566,6 +653,7 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
+            // 5. 渲染
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -575,7 +663,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.1</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.11</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -626,7 +714,7 @@
                                                         <td key={label.id} 
                                                             style={{ color: label.color }}
                                                             className={`px-1 cursor-pointer hover:bg-white/5 ${activeFilter?.userName === m.name && activeFilter?.statusId === label.id ? 'filter-active' : 'opacity-70 hover:opacity-100'}`} 
-                                                            onClick={() => setActiveFilter(prev => (prev?.userName === m.name && prev?.statusId === label.id ? null : { userName: m.name, statusId: label.id }))}>
+                                                            onClick={() => handleSetFilter(m.name, label.id)}>
                                                             {label.label} {m.stats[label.id]}
                                                         </td>
                                                     ))}
@@ -680,7 +768,7 @@
                                                 <GameRow 
                                                     g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
                                                     statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
-                                                    personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={p => setExpandedGroups(prev => {const next = new Set(prev); if(next.has(p)) next.delete(p); else next.add(p); return next;})} onOpenEdit={openEditModal}
+                                                    personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
                                                     onStartDrag={(id, idx) => { setDraggedId(id); setDraggedIdx(idx); }} 
                                                     onDrop={(targetIdx) => {
                                                         const newRoots = [...hierarchy.roots]; const [removed] = newRoots.splice(draggedIdx, 1);
@@ -690,7 +778,7 @@
                                                     }}
                                                     onUpdateOrder={async (id, val) => { const order = parseInt(val); if (!isNaN(order)) await db.collection(paths.games).doc(id).update({ order }); }}
                                                     onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }}
-                                                    onNest={async (cid) => { if(draggedId && draggedId !== cid) await db.collection(paths.games).doc(draggedId).update({ parentId: cid }); }}
+                                                    onNest={(id) => handleNestGame(draggedId, id)}
                                                     onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
                                                     onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                     onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame}
@@ -714,6 +802,7 @@
                         </div>
                     </div>
 
+                    {/* 修改狀態分組與顏色設定彈窗 */}
                     {isStatusSettingsOpen && (
                         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
@@ -723,30 +812,55 @@
                                         <div key={item.id} className="flex items-center gap-3 bg-black/40 p-3 rounded border border-white/5 group">
                                             <div className="flex flex-col items-center gap-1 shrink-0">
                                                 <div className="text-[9px] font-black text-slate-600 uppercase">顏色</div>
-                                                <input type="color" className="w-10 h-10 bg-transparent cursor-pointer rounded border border-white/10" value={item.color} onChange={e => { const newList = [...statusLabels]; newList[index].color = e.target.value; setStatusLabels(newList); }} />
+                                                <input 
+                                                    type="color"
+                                                    className="w-10 h-10 bg-transparent cursor-pointer rounded border border-white/10"
+                                                    value={item.color}
+                                                    onChange={e => {
+                                                        const newList = [...statusLabels];
+                                                        newList[index].color = e.target.value;
+                                                        setStatusLabels(newList);
+                                                    }}
+                                                />
                                             </div>
                                             <div className="flex-grow flex flex-col gap-1">
                                                 <div className="text-[9px] font-black text-slate-600 uppercase pl-1">標籤名稱</div>
-                                                <input className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold" style={{ color: item.color }} value={item.label} onChange={e => { const newList = [...statusLabels]; newList[index].label = e.target.value; setStatusLabels(newList); }} />
+                                                <input 
+                                                    className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold"
+                                                    style={{ color: item.color }}
+                                                    value={item.label}
+                                                    onChange={e => {
+                                                        const newList = [...statusLabels];
+                                                        newList[index].label = e.target.value;
+                                                        setStatusLabels(newList);
+                                                    }}
+                                                />
                                             </div>
-                                            <button onClick={() => { if(statusLabels.length > 1) setStatusLabels(statusLabels.filter(l => l.id !== item.id)); }} className="text-slate-600 hover:text-red-500 transition-colors pt-4"><Icon name="trash-2" className="w-6 h-6" /></button>
+                                            <button onClick={() => removeStatusGroup(item.id)} className="text-slate-600 hover:text-red-500 transition-colors pt-4">
+                                                <Icon name="trash-2" className="w-6 h-6" />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
-                                <button onClick={() => setStatusLabels([...statusLabels, { id: `status_${Date.now()}`, label: '新分組', color: '#ffffff' }])} className="w-full py-4 mb-8 border border-dashed border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/5 font-black rounded transition-all uppercase tracking-widest">+ 新增狀態分組</button>
+                                <button onClick={addNewStatusGroup} className="w-full py-4 mb-8 border border-dashed border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/5 font-black rounded transition-all uppercase tracking-widest">+ 新增狀態分組</button>
                                 <div className="flex gap-4">
-                                    <button onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-4 bg-slate-900 font-black rounded uppercase tracking-widest">取消</button>
+                                    <button type="button" onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-4 bg-slate-900 font-black rounded uppercase tracking-widest">取消</button>
                                     <button onClick={handleUpdateLabels} className="flex-1 py-4 bg-cyan-600 text-black font-black rounded hover:bg-cyan-500 uppercase tracking-widest">儲存同步</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
+                    {/* 錄入彈窗佈局 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-sm">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-indigo-600"></div>
-                                <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10"><Icon name="x" className="w-5 h-5" /></button>
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-right from-cyan-500 to-indigo-600"></div>
+                                
+                                <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10">
+                                    <Icon name="x" className="w-5 h-5" />
+                                </button>
+
                                 <div className="p-6 md:p-8">
                                     <div className="mb-6 -ml-2 flex items-baseline gap-4">
                                         <h3 className="text-2xl font-black italic tracking-tighter flex items-center gap-2 underline decoration-cyan-400/30 decoration-4">
@@ -755,51 +869,101 @@
                                         </h3>
                                         <div className="h-0.5 flex-grow bg-white/5"></div>
                                     </div>
+                                    
                                     <form onSubmit={handleSaveGame} className="space-y-4">
                                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                                             <div className="md:col-span-4 flex flex-col items-center justify-start">
                                                 <div className="w-full max-w-[120px] group relative">
-                                                    <div onClick={() => fileInputRef.current.click()} className="aspect-[3/4.2] bg-black border border-slate-800 rounded flex flex-col items-center justify-center cursor-pointer overflow-hidden relative z-10 hover:border-cyan-400 transition-all shadow-xl">
-                                                        {formData.cover ? <img src={formData.cover} className="w-full h-full object-cover" /> : 
+                                                    <div className="absolute inset-0 bg-cyan-500/10 blur-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                    <div 
+                                                        onClick={() => fileInputRef.current.click()} 
+                                                        className="aspect-[3/4.2] bg-black border border-slate-800 rounded flex flex-col items-center justify-center cursor-pointer overflow-hidden relative z-10 hover:border-cyan-400 transition-all shadow-xl"
+                                                    >
+                                                        {formData.cover ? 
+                                                            <img src={formData.cover} className="w-full h-full object-cover" /> : 
                                                             <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500 transition-colors">
                                                                 <Icon name="camera" className="w-6 h-6" />
                                                                 <span className="text-[9px] font-black uppercase tracking-tighter text-center px-2 leading-tight">貼上封面<br/>(CTRL+V)</span>
                                                             </div>
                                                         }
                                                     </div>
-                                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ const file = e.target.files[0]; if(file) { const r = new FileReader(); r.onload = async (ev) => { const c = await compressImage(ev.target.result); setFormData(p=>({...p, cover: c})); }; r.readAsDataURL(file); } }} />
+                                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ const file = e.target.files[0]; if(file) { const reader = new FileReader(); reader.onload = async (ev) => { const compressed = await compressImage(ev.target.result); setFormData({...formData, cover: compressed}); }; reader.readAsDataURL(file); } }} />
                                                 </div>
                                             </div>
+
                                             <div className="md:col-span-8 space-y-3">
                                                 <div className="modal-field-container">
-                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter">提起人</label>
+                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">提起人</label>
                                                     <select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}>
                                                         <option value="">選擇人員...</option>
                                                         {tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}
                                                     </select>
                                                 </div>
+
                                                 <div className="modal-field-container items-start">
-                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter mt-2.5">遊戲名稱</label>
-                                                    <textarea required rows="2" placeholder="輸入名稱..." className="modal-input-base w-full text-lg font-black resize-none leading-snug" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} />
+                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left mt-2.5">遊戲名稱</label>
+                                                    <textarea 
+                                                        required 
+                                                        rows="2" 
+                                                        placeholder="輸入名稱..."
+                                                        className="modal-input-base w-full text-lg font-black resize-none leading-snug" 
+                                                        value={formData.name} 
+                                                        onChange={e=>setFormData({...formData, name: e.target.value})} 
+                                                    />
                                                 </div>
+
                                                 <div className="modal-field-container">
-                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter">商店網址</label>
-                                                    <input className="modal-input-base w-full text-[10px] font-mono text-cyan-400" placeholder="https://store.steampowered.com/..." value={formData.url} onChange={e=>setFormData({...formData, url: e.target.value})} />
+                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">商店網址</label>
+                                                    <div className="relative">
+                                                        <Icon name="link-2" className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
+                                                        <input 
+                                                            className="modal-input-base w-full pl-9 text-[10px] font-mono text-cyan-400" 
+                                                            placeholder="https://store.steampowered.com/..."
+                                                            value={formData.url} 
+                                                            onChange={e=>setFormData({...formData, url: e.target.value})} 
+                                                        />
+                                                    </div>
                                                 </div>
+
                                                 <div className="modal-field-container">
-                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter">價格設定</label>
-                                                    <div className="flex w-fit items-stretch overflow-hidden rounded bg-black/40 border-b-2 border-slate-800">
-                                                        <select className="bg-transparent font-black text-indigo-400 outline-none p-2 text-sm" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>
-                                                            {currencies.map(c => <option key={c} value={c} className="bg-[#0b0e14]">{c}</option>)}
-                                                        </select>
-                                                        <input type="number" placeholder="0" className="bg-transparent p-2 text-xl font-black outline-none text-white tracking-tighter w-28" value={formData.price === '0' ? '' : formData.price} onChange={e=>setFormData({...formData, price: e.target.value || '0'})} />
+                                                    <label className="text-[12px] font-black text-indigo-400 tracking-tighter text-left">價格設定</label>
+                                                    <div className="flex w-fit items-stretch overflow-hidden rounded bg-black/40 border-b-2 border-slate-800 focus-within:border-cyan-400 transition-all">
+                                                        <div className="flex items-center bg-indigo-900/10 px-3 border-r border-white/5">
+                                                            <select 
+                                                                className="bg-transparent font-black text-indigo-400 outline-none appearance-none cursor-pointer text-sm" 
+                                                                value={formData.currency} 
+                                                                onChange={e=>setFormData({...formData, currency: e.target.value})}
+                                                            >
+                                                                {currencies.map(c => <option key={c} value={c} className="bg-[#0b0e14]">{c}</option>)}
+                                                            </select>
+                                                            <Icon name="chevron-down" className="w-3 h-3 ml-1 text-indigo-400/50" />
+                                                        </div>
+                                                        <input 
+                                                            type="number" 
+                                                            placeholder="0"
+                                                            className="bg-transparent p-2 text-xl font-black outline-none text-white tracking-tighter w-28" 
+                                                            value={formData.price === '0' ? '' : formData.price} 
+                                                            onChange={e=>setFormData({...formData, price: e.target.value || '0'})} 
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
+                                        
                                         <div className="pt-4 flex gap-4">
-                                            <button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 text-[12px] font-black uppercase tracking-widest rounded-sm border border-white/5">放棄更改</button>
-                                            <button type="submit" className="flex-[2] py-3 bg-cyan-600 text-black text-[12px] font-black uppercase tracking-widest rounded-sm shadow-lg">確認同步至矩陣庫</button>
+                                            <button 
+                                                type="button" 
+                                                onClick={closeModal}
+                                                className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-[12px] font-black uppercase tracking-widest transition-all rounded-sm border border-white/5"
+                                            >
+                                                放棄更改
+                                            </button>
+                                            <button 
+                                                type="submit" 
+                                                className="flex-[2] py-3 bg-cyan-600 hover:bg-cyan-500 text-black text-[12px] font-black uppercase tracking-widest transition-all rounded-sm shadow-lg active:scale-[0.98]"
+                                            >
+                                                確認同步至矩陣庫
+                                            </button>
                                         </div>
                                     </form>
                                 </div>
@@ -807,6 +971,7 @@
                         </div>
                     )}
 
+                    {/* 添加人員彈窗 */}
                     {newPersonnelInput.gameId && (
                         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
