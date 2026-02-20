@@ -102,24 +102,24 @@
             outline: none;
         }
 
-        /* 成就環動畫與定位 */
+        /* 進度條容器樣式優化 */
+        .achievement-bar-wrapper {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            outline: 1px solid rgba(255, 255, 255, 0.04);
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8);
+            height: 16px;
+            border-radius: 9999px;
+            position: relative;
+            overflow: hidden;
+            width: 100%;
+            max-width: 150px; /* 拉短一點 */
+        }
+
         .progress-ring-circle {
             transition: stroke-dashoffset 0.5s ease-in-out, stroke 0.3s ease;
             transform: rotate(-90deg);
             transform-origin: 50% 50%;
-        }
-        
-        .ring-text-container {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
         }
     </style>
 </head>
@@ -209,54 +209,59 @@
             );
         };
 
-        // --- 成就進度環組件 (優化: 鎖定時無數據不顯示) ---
-        const AchievementRing = memo(({ completed = 0, total = 0, onClick, isEditLocked }) => {
-            // 如果鎖定且總數為 0，則不顯示
-            if (isEditLocked && (!total || parseInt(total) === 0)) return null;
-
-            const size = 60;
-            const strokeWidth = 5;
-            const center = size / 2;
-            const radius = (size - strokeWidth) / 2;
-            const circumference = 2 * Math.PI * radius;
-            
+        // --- 優化後的橫線成就進度條組件 ---
+        const AchievementBar = memo(({ completed = 0, total = 0, onClick, isEditLocked }) => {
             const totalNum = parseInt(total) || 0;
             const completedNum = parseInt(completed) || 0;
-            const percentage = totalNum > 0 ? Math.min(Math.round((completedNum / totalNum) * 100), 100) : 0;
-            const offset = circumference - (percentage / 100) * circumference;
 
-            let ringColor = "#3b82f6"; 
+            // 鎖定狀態下，如果總數為 0 則不顯示
+            if (isEditLocked && totalNum === 0) return <div className="h-9"></div>;
+
+            const percentage = totalNum > 0 ? Math.min(Math.round((completedNum / totalNum) * 100), 100) : 0;
+
+            // 顏色邏輯：少於 50% 藍色, 大於或等於 50% 黃色, 100% 綠色
+            let barColorClass = "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.4)]"; 
             if (totalNum > 0) {
-                if (percentage === 100) ringColor = "#bef264"; 
-                else if (percentage >= 50) ringColor = "#facc15"; 
+                if (percentage === 100) {
+                    barColorClass = "bg-lime-400 shadow-[0_0_12px_rgba(163,230,53,0.4)]";
+                }
+                else if (percentage >= 50) {
+                    barColorClass = "bg-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.4)]";
+                }
             } else {
-                ringColor = "#334155"; 
+                barColorClass = "bg-slate-700 opacity-20"; 
             }
 
             return (
                 <div 
-                    className={`flex flex-col items-center justify-center transition-all duration-300 ${!isEditLocked ? 'cursor-pointer hover:scale-105 active:scale-95' : ''}`}
+                    className={`flex items-center gap-1 h-9 w-full transition-all duration-300 ${!isEditLocked ? 'cursor-pointer hover:bg-white/5 px-1 rounded' : ''}`}
                     onClick={(e) => {
-                        e.stopPropagation(); // 阻止事件冒泡到表格行，防止誤觸雙擊
+                        e.stopPropagation();
                         if(!isEditLocked) onClick();
                     }}
                 >
-                    <div className="relative flex items-center justify-center">
-                        <svg width={size} height={size} className="block">
-                            <circle cx={center} cy={center} r={radius - 4} fill="transparent" stroke="#1e293b" strokeWidth="1" />
-                            <circle cx={center} cy={center} r={radius} fill="transparent" stroke="rgba(255,255,255,0.03)" strokeWidth={strokeWidth} />
-                            <circle className="progress-ring-circle" cx={center} cy={center} r={radius} fill="transparent" stroke={ringColor} strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
-                        </svg>
-                        <div className="ring-text-container">
-                            <span className="text-[16px] font-black leading-none" style={{ color: totalNum === 0 ? '#475569' : ringColor }}>
-                                {percentage}<span className="text-[10px] ml-0.5">%</span>
+                    {/* 橫線進度條容器 - 修復長度與邊框 */}
+                    <div className="achievement-bar-wrapper">
+                        <div 
+                            className={`h-full transition-all duration-700 ease-out ${barColorClass}`} 
+                            style={{ width: `${percentage}%` }}
+                        ></div>
+                        {/* 置中顯示百分比 (%) */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-[10px] font-black text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] tracking-tighter">
+                                {percentage}%
                             </span>
                         </div>
                     </div>
-                    <div className="mt-1 flex items-center gap-1">
-                        <span className="text-[10px] text-slate-400 font-black tracking-tight">{completedNum}</span>
+                    {/* 右側數字 - 緊貼一點 */}
+                    <div className="flex items-center gap-0.5 shrink-0 min-w-[45px] justify-end">
+                        <span className={`text-[12px] font-black leading-none ${percentage === 100 ? 'text-lime-400' : 'text-white'}`}>
+                            {completedNum}
+                        </span>
                         <span className="text-[8px] text-slate-700 font-bold">/</span>
-                        <span className="text-[10px] text-slate-500 font-black tracking-tight">{totalNum}</span>
+                        <span className="text-[11px] text-slate-500 font-black">
+                            {totalNum}
+                        </span>
                     </div>
                 </div>
             );
@@ -369,8 +374,20 @@
                                 </div>
                             </div>
                         </td>
+                        {/* 成就進度欄位 - 橫線樣式 & 按人顯示 */}
                         <td className="px-4 text-center">
-                            <AchievementRing completed={g.achievementCompleted} total={g.achievementTotal} isEditLocked={isEditLocked} onClick={() => onOpenAchievementEdit(g)} />
+                            <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
+                                {personnel.map(p => (
+                                    <AchievementBar 
+                                        key={p.id} 
+                                        completed={p.achCompleted} 
+                                        total={p.achTotal} 
+                                        isEditLocked={isEditLocked} 
+                                        onClick={() => onOpenAchievementEdit(g, p)} 
+                                    />
+                                ))}
+                                {personnel.length === 0 && <div className="h-9"></div>}
+                            </div>
                         </td>
                         <td className="px-4 text-center">
                             <div className="flex items-center justify-center gap-3">
@@ -426,8 +443,8 @@
                 { id: 'completed', label: '已完成', color: '#bef264' }
             ]);
             
-            // 成就編輯狀態 (優化: 使用字串以支援空白顯示)
-            const [achievementEdit, setAchievementEdit] = useState({ gameId: null, completed: '', total: '', name: '' });
+            // 成就編輯狀態
+            const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -477,19 +494,20 @@
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
             }, [user, userColor, userName, paths]);
 
-            // 成就同步功能 (優化: 僅點擊確認才儲存)
+            // 成就同步功能
             const handleUpdateAchievements = async () => {
-                if (!db || !achievementEdit.gameId) return;
+                if (!db || !achievementEdit.userId || !achievementEdit.gameId) return;
                 const compValue = parseInt(achievementEdit.completed) || 0;
                 const totalValue = parseInt(achievementEdit.total) || 0;
+                const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                 try {
-                    await db.collection(paths.games).doc(achievementEdit.gameId).update({
-                        achievementTotal: totalValue,
-                        achievementCompleted: compValue
+                    await db.collection(paths.statuses).doc(docId).update({
+                        achTotal: totalValue,
+                        achCompleted: compValue
                     });
-                    logActivity("更新成就", achievementEdit.name);
+                    logActivity(`更新 [${achievementEdit.memberName}] 的成就`, achievementEdit.name);
                     showNotify("成就數據已同步");
-                    setAchievementEdit({ gameId: null, completed: '', total: '', name: '' });
+                    setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
                 } catch (e) {
                     showNotify("同步失敗");
                 }
@@ -504,7 +522,6 @@
                 } catch (err) { showNotify("儲存失敗"); }
             }, [statusLabels, paths, showNotify]);
 
-            // 保存遊戲 (同步資料庫按鍵)
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
                 if (!formData.name.trim() || !user || !db) return;
@@ -550,30 +567,32 @@
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        const batch = db.batch(); // 使用 Batch 批次優化寫入
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                if (id) batch.set(db.collection(paths.games).doc(id), gd, { merge: true });
+                                if (id) await db.collection(paths.games).doc(id).set(gd, { merge: true });
                             }
                         }
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
                                 const docId = id || `${sd.gameId}_${sd.userId}`;
-                                batch.set(db.collection(paths.statuses).doc(docId), sd, { merge: true });
+                                await db.collection(paths.statuses).doc(docId).set(sd, { merge: true });
                             }
                         }
                         if (data.settings) {
-                            if (data.settings.statusLabels) batch.set(db.collection(paths.settings).doc('labels'), { list: data.settings.statusLabels });
-                            if (data.settings.currencies) batch.set(db.collection(paths.settings).doc('global'), { currencies: data.settings.currencies });
+                            if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
+                            if (data.settings.currencies) await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
                         }
-                        await batch.commit();
-                        showNotify("資料庫還原成功");
+                        showNotify("備份已完整還原");
                     } catch (err) { showNotify("還原失敗"); }
                 };
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
+
+            const statusOptions = useMemo(() => {
+                return statusLabels.map(l => ({ id: l.id, label: l.label }));
+            }, [statusLabels]);
 
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
@@ -595,10 +614,6 @@
                 allUserStatuses.forEach(s => { if (!map[s.gameId]) map[s.gameId] = []; map[s.gameId].push(s); });
                 return map;
             }, [allUserStatuses]);
-
-            const statusOptions = useMemo(() => {
-                return statusLabels.map(l => ({ id: l.id, label: l.label }));
-            }, [statusLabels]);
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
@@ -682,7 +697,7 @@
 
             useEffect(() => {
                 if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} }
-            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, newPersonnelInput]);
+            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit]);
 
             useEffect(() => {
                 if (!isModalOpen) return;
@@ -710,7 +725,6 @@
                 return () => window.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
-            // 5. 渲染
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -808,7 +822,7 @@
                                     <thead>
                                         <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
                                             <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-12 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({key:'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>編號</th>
+                                            <th className="px-1 py-5 w-12 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</th>
                                             <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center">遊戲名稱</th>
@@ -841,11 +855,13 @@
                                                     onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                     onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame}
                                                     onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
-                                                    onOpenAchievementEdit={(game) => setAchievementEdit({ 
+                                                    onOpenAchievementEdit={(game, person) => setAchievementEdit({ 
                                                         gameId: game.id, 
-                                                        completed: (game.achievementCompleted || 0).toString(), 
-                                                        total: (game.achievementTotal || 0).toString(), 
-                                                        name: game.name 
+                                                        userId: person.userId,
+                                                        completed: (person.achCompleted || 0).toString(), 
+                                                        total: (person.achTotal || 0).toString(), 
+                                                        name: game.name,
+                                                        memberName: person.userName
                                                     })}
                                                 />
                                                 {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map(child => (
@@ -856,11 +872,13 @@
                                                         onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
                                                         onDelete={handleDeleteGame} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                         onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
-                                                        onOpenAchievementEdit={(game) => setAchievementEdit({ 
+                                                        onOpenAchievementEdit={(game, person) => setAchievementEdit({ 
                                                             gameId: game.id, 
-                                                            completed: (game.achievementCompleted || 0).toString(), 
-                                                            total: (game.achievementTotal || 0).toString(), 
-                                                            name: game.name 
+                                                            userId: person.userId,
+                                                            completed: (person.achCompleted || 0).toString(), 
+                                                            total: (person.achTotal || 0).toString(), 
+                                                            name: game.name,
+                                                            memberName: person.userName
                                                         })}
                                                     />
                                                 ))}
@@ -876,7 +894,7 @@
                     {achievementEdit.gameId && (
                         <div 
                             className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-                            onClick={() => setAchievementEdit({ gameId: null, completed: '', total: '', name: '' })}
+                            onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}
                         >
                             <div 
                                 className="bg-[#0b0e14] border border-amber-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center"
@@ -884,7 +902,7 @@
                             >
                                 <div className="absolute top-0 left-0 w-full h-1 bg-amber-500"></div>
                                 <h3 className="text-xl font-black mb-1 text-amber-400 italic underline decoration-amber-500/30 decoration-4">成就數據同步</h3>
-                                <p className="text-[10px] text-slate-500 mb-6 font-bold truncate opacity-60 uppercase">{achievementEdit.name}</p>
+                                <p className="text-[10px] text-slate-500 mb-6 font-bold truncate opacity-60 uppercase">{achievementEdit.name} - [{achievementEdit.memberName}]</p>
                                 
                                 <div className="grid grid-cols-2 gap-4 mb-8 text-center">
                                     <div className="flex flex-col gap-1.5">
@@ -911,7 +929,7 @@
 
                                 <div className="flex gap-4">
                                     <button 
-                                        onClick={() => setAchievementEdit({ gameId: null, completed: '', total: '', name: '' })}
+                                        onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}
                                         className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase"
                                     >
                                         放棄
@@ -1016,7 +1034,7 @@
                                 {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
                                 <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black rounded uppercase">取消</button><button onClick={async () => {
                                     const n = newPersonnelInput.name.trim(); if(!n || n === "_manual_") return;
-                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: currencies[0] });
+                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: currencies[0], achTotal: 0, achCompleted: 0 });
                                     setNewPersonnelInput({ gameId: null, name: '' });
                                 }} className="flex-1 py-2 bg-indigo-600 text-xs font-black rounded uppercase">確認添加</button></div>
                             </div>
