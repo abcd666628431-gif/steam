@@ -437,6 +437,9 @@
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
 
+            // 實時監聽狀態控制 (Visibility)
+            const [isPageVisible, setIsPageVisible] = useState(true);
+
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
 
@@ -620,7 +623,6 @@
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
             }, [games, allUserStatuses, statusLabels, currencies]);
 
-            // --- 修改：還原邏輯不再合併，而是覆蓋現有資料 ---
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file || !db) return;
                 const reader = new FileReader();
@@ -629,26 +631,22 @@
                         const data = JSON.parse(ev.target.result);
                         showNotify("正在清除舊資料並導入...");
 
-                        // 1. 清除現有遊戲
                         const gamesSnap = await db.collection(paths.games).get();
                         const gBatch = db.batch();
                         gamesSnap.forEach(doc => gBatch.delete(doc.ref));
                         await gBatch.commit();
 
-                        // 2. 清除現有人員狀態
                         const statusSnap = await db.collection(paths.statuses).get();
                         const sBatch = db.batch();
                         statusSnap.forEach(doc => sBatch.delete(doc.ref));
                         await sBatch.commit();
 
-                        // 3. 寫入新遊戲
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
                                 if (id) await db.collection(paths.games).doc(id).set(gd);
                             }
                         }
-                        // 4. 寫入新狀態
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
@@ -656,7 +654,6 @@
                                 await db.collection(paths.statuses).doc(docId).set(sd);
                             }
                         }
-                        // 5. 更新設定
                         if (data.settings) {
                             if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
                             if (data.settings.currencies) await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
@@ -750,69 +747,96 @@
             }, []);
 
             useEffect(() => {
-                if (!isClient || !user || !db) return;
+                if (!isClient) return;
+                const handleVisibility = () => setIsPageVisible(document.visibilityState === 'visible');
+                document.addEventListener('visibilitychange', handleVisibility);
+                return () => document.removeEventListener('visibilitychange', handleVisibility);
+            }, []);
+
+            // --- 核心優化：增量同步數據 (節省流量關鍵) ---
+            useEffect(() => {
+                if (!isClient || !user || !db || !isPageVisible) return;
                 
                 let activeUnsubscribers = [];
                 const handleError = (err) => {
                     console.error("Firestore Error:", err);
-                    if (err.code === 'resource-exhausted') {
-                        showNotify("⚠️ 配額超出 (Quota Exceeded)，已暫停實時同步以保護連接。");
-                        activeUnsubscribers.forEach(unsub => unsub());
-                        activeUnsubscribers = [];
-                    }
+                    if (err.code === 'resource-exhausted') showNotify("⚠️ 配額超出，已暫停同步。");
                 };
 
-                const subscribe = () => {
-                    activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
-                        const list = []; const now = Date.now();
-                        snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                        setOnlineUsers(list);
-                    }, handleError));
+                // 遊戲數據增量更新
+                const unsubG = db.collection(paths.games).onSnapshot(snap => {
+                    setGames(prevGames => {
+                        let newGames = [...prevGames];
+                        snap.docChanges().forEach(change => {
+                            const data = { id: change.doc.id, ...change.doc.data() };
+                            if (change.type === "added") {
+                                // 檢查是否已存在
+                                if (!newGames.find(g => g.id === data.id)) newGames.push(data);
+                            } else if (change.type === "modified") {
+                                const idx = newGames.findIndex(g => g.id === data.id);
+                                if (idx > -1) newGames[idx] = data;
+                            } else if (change.type === "removed") {
+                                newGames = newGames.filter(g => g.id !== data.id);
+                            }
+                        });
+                        return newGames;
+                    });
+                    setIsLoadingGames(false);
+                }, handleError);
+                activeUnsubscribers.push(unsubG);
 
-                    activeUnsubscribers.push(db.collection(paths.logs).onSnapshot(snap => {
-                        const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                        logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                        setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                    }, handleError));
+                // 人員狀態增量更新
+                const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
+                    setAllUserStatuses(prevStatuses => {
+                        let newStatuses = [...prevStatuses];
+                        snap.docChanges().forEach(change => {
+                            const data = { id: change.doc.id, ...change.doc.data() };
+                            if (change.type === "added") {
+                                if (!newStatuses.find(s => s.id === data.id)) newStatuses.push(data);
+                            } else if (change.type === "modified") {
+                                const idx = newStatuses.findIndex(s => s.id === data.id);
+                                if (idx > -1) newStatuses[idx] = data;
+                            } else if (change.type === "removed") {
+                                newStatuses = newStatuses.filter(s => s.id !== data.id);
+                            }
+                        });
+                        return newStatuses;
+                    });
+                }, handleError);
+                activeUnsubscribers.push(unsubS);
 
-                    activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
-                        const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                        setGames(data); setIsLoadingGames(false);
-                    }, handleError));
+                // 其他較小數據路徑維持全量同步
+                activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
+                    const list = []; const now = Date.now();
+                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                    setOnlineUsers(list);
+                }, handleError));
 
-                    activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
-                        const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                        setAllUserStatuses(data);
-                    }, handleError));
+                activeUnsubscribers.push(db.collection(paths.logs).onSnapshot(snap => {
+                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                    setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
+                }, handleError));
 
-                    activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
-                        if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
-                    }, handleError));
+                activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
+                }, handleError));
 
-                    activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => {
-                        if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
-                    }, handleError));
-                };
+                activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => {
+                    if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
+                }, handleError));
 
-                subscribe();
                 return () => activeUnsubscribers.forEach(unsub => unsub());
-            }, [user, paths, showNotify]);
+            }, [user, paths, isPageVisible]);
 
             useEffect(() => {
                 if (!isClient || !user || !db) return;
-
                 const updatePresence = () => {
                     if (document.visibilityState === 'hidden') return;
                     db.collection(paths.presence).doc(user.uid).set({ 
-                        uid: user.uid, 
-                        name: userName, 
-                        color: userColor, 
-                        lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
-                    }, { merge: true }).catch(err => {
-                        if (err.code === 'resource-exhausted') clearInterval(heartbeat);
-                    });
+                        uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true }).catch(() => {});
                 };
-
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 120000);
                 return () => clearInterval(heartbeat);
@@ -850,6 +874,13 @@
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
+                    {!isPageVisible && (
+                        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-cyan-400 font-black">
+                            <Icon name="zap-off" className="w-12 h-12 mb-4 animate-pulse" />
+                            <p className="text-xl tracking-widest uppercase">系統休眠中 (省流量模式)</p>
+                            <p className="text-xs text-slate-500 mt-2">請點擊頁面恢復實時同步</p>
+                        </div>
+                    )}
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
                     {notification && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-cyan-500 text-black font-black px-6 py-2 rounded-full border-2 border-white shadow-2xl">{notification}</div>}
                     
