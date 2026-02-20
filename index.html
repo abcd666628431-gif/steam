@@ -102,7 +102,6 @@
             outline: none;
         }
 
-        /* 進度條容器樣式優化 */
         .achievement-bar-wrapper {
             background: rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.08);
@@ -113,7 +112,7 @@
             position: relative;
             overflow: hidden;
             width: 100%;
-            max-width: 150px; /* 拉短一點 */
+            max-width: 150px;
         }
 
         .progress-ring-circle {
@@ -169,13 +168,15 @@
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
+        // 已更新：最新的 Firebase 配置
         const firebaseConfig = {
-            apiKey: "AIzaSyCUKIWAj3yDEVl-9s0J6dsuWv3fZ4mVKlw",
-            authDomain: "coffee-spark-ai-barista-ab434.firebaseapp.com",
-            projectId: "coffee-spark-ai-barista-ab434",
-            storageBucket: "coffee-spark-ai-barista-ab434.firebasestorage.app",
-            messagingSenderId: "447263468848",
-            appId: "1:447263468848:web:6ee534757a0342c394acf5"
+            apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
+            authDomain: "cloud-714ce.firebaseapp.com",
+            projectId: "cloud-714ce",
+            storageBucket: "cloud-714ce.firebasestorage.app",
+            messagingSenderId: "793151737559",
+            appId: "1:793151737559:web:7e7def7c8012bc91542a92",
+            measurementId: "G-9QC9JZ6SB9"
         };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -192,7 +193,6 @@
             </span>
         ));
 
-        // --- 本地輸入組件 (性能優化) ---
         const LocalNumberInput = ({ defaultValue, onConfirm, className, placeholder }) => {
             const [val, setVal] = useState(defaultValue);
             useEffect(() => { setVal(defaultValue); }, [defaultValue]);
@@ -209,17 +209,14 @@
             );
         };
 
-        // --- 優化後的橫線成就進度條組件 ---
         const AchievementBar = memo(({ completed = 0, total = 0, onClick, isEditLocked }) => {
             const totalNum = parseInt(total) || 0;
             const completedNum = parseInt(completed) || 0;
 
-            // 鎖定狀態下，如果總數為 0 則不顯示
             if (isEditLocked && totalNum === 0) return <div className="h-9"></div>;
 
             const percentage = totalNum > 0 ? Math.min(Math.round((completedNum / totalNum) * 100), 100) : 0;
 
-            // 顏色邏輯：少於 50% 藍色, 大於或等於 50% 黃色, 100% 綠色
             let barColorClass = "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.4)]"; 
             if (totalNum > 0) {
                 if (percentage === 100) {
@@ -240,20 +237,17 @@
                         if(!isEditLocked) onClick();
                     }}
                 >
-                    {/* 橫線進度條容器 - 修復長度與邊框 */}
                     <div className="achievement-bar-wrapper">
                         <div 
                             className={`h-full transition-all duration-700 ease-out ${barColorClass}`} 
                             style={{ width: `${percentage}%` }}
                         ></div>
-                        {/* 置中顯示百分比 (%) */}
                         <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-[10px] font-black text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] tracking-tighter">
                                 {percentage}%
                             </span>
                         </div>
                     </div>
-                    {/* 右側數字 - 緊貼一點 */}
                     <div className="flex items-center gap-0.5 shrink-0 min-w-[45px] justify-end">
                         <span className={`text-[12px] font-black leading-none ${percentage === 100 ? 'text-lime-400' : 'text-white'}`}>
                             {completedNum}
@@ -374,7 +368,6 @@
                                 </div>
                             </div>
                         </td>
-                        {/* 成就進度欄位 - 橫線樣式 & 按人顯示 */}
                         <td className="px-4 text-center">
                             <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
                                 {personnel.map(p => (
@@ -411,7 +404,6 @@
         });
 
         function App() {
-            // 1. 狀態定義
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
@@ -443,7 +435,7 @@
                 { id: 'completed', label: '已完成', color: '#bef264' }
             ]);
             
-            // 成就編輯狀態
+            const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
 
             const importInputRef = useRef(null);
@@ -457,7 +449,6 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
-            // 2. 核心功能函式
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
@@ -494,7 +485,6 @@
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
             }, [user, userColor, userName, paths]);
 
-            // 成就同步功能
             const handleUpdateAchievements = async () => {
                 if (!db || !achievementEdit.userId || !achievementEdit.gameId) return;
                 const compValue = parseInt(achievementEdit.completed) || 0;
@@ -545,6 +535,44 @@
                     showNotify("同步成功"); closeModal();
                 } catch (err) { showNotify("同步失敗"); }
             }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
+
+            const handleUpdateOrder = async (id, val) => {
+                const order = parseInt(val);
+                if (isNaN(order) || !db) return;
+
+                try {
+                    const batch = db.batch();
+                    const roots = games.filter(g => !g.parentId).sort((a, b) => (a.order || 0) - (b.order || 0));
+                    roots.forEach(g => {
+                        if (g.id !== id && (g.order || 0) >= order) {
+                            batch.update(db.collection(paths.games).doc(g.id), { order: (g.order || 0) + 1 });
+                        }
+                    });
+                    batch.update(db.collection(paths.games).doc(id), { order });
+                    await batch.commit();
+                    showNotify("編號已更新且整體順延");
+                } catch (e) {
+                    showNotify("編號更新失敗");
+                }
+            };
+
+            const handleNormalizeOrders = async () => {
+                if (!db) return;
+                try {
+                    const batch = db.batch();
+                    const sortedRoots = [...games.filter(g => !g.parentId)].sort((a, b) => (a.order || 0) - (b.order || 0));
+                    
+                    sortedRoots.forEach((g, idx) => {
+                        batch.update(db.collection(paths.games).doc(g.id), { order: idx + 1 });
+                    });
+                    
+                    await batch.commit();
+                    showNotify("編號已重新校正且補齊");
+                    setShowNormalizeConfirm(false);
+                } catch (e) {
+                    showNotify("校正失敗");
+                }
+            };
 
             const handleDeleteGame = useCallback(async (game) => {
                 if(!db || !confirm(`確定刪除 ${game.name}?`)) return;
@@ -663,41 +691,81 @@
                 return () => unsub();
             }, []);
 
+            // 優化的資料監聽 useEffect (加入 Quota 耗盡後的自動中斷保護)
             useEffect(() => {
                 if (!isClient || !user || !db) return;
-                const updatePresence = () => {
-                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                
+                let activeUnsubscribers = [];
+                const handleError = (err) => {
+                    console.error("Firestore Error:", err);
+                    if (err.code === 'resource-exhausted') {
+                        showNotify("⚠️ 配額超出 (Quota Exceeded)，已暫停實時同步以保護連接。");
+                        activeUnsubscribers.forEach(unsub => unsub());
+                        activeUnsubscribers = [];
+                    }
                 };
+
+                const subscribe = () => {
+                    activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
+                        const list = []; const now = Date.now();
+                        snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                        setOnlineUsers(list);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.logs).onSnapshot(snap => {
+                        const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+                        logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                        setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
+                        const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                        setGames(data); setIsLoadingGames(false);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
+                        const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+                        setAllUserStatuses(data);
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
+                        if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
+                    }, handleError));
+
+                    activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => {
+                        if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
+                    }, handleError));
+                };
+
+                subscribe();
+                return () => activeUnsubscribers.forEach(unsub => unsub());
+            }, [user, paths, showNotify]);
+
+            // 優化的 Presence 心跳 (降低頻率至 120 秒，並加入 Visibility 判斷)
+            useEffect(() => {
+                if (!isClient || !user || !db) return;
+
+                const updatePresence = () => {
+                    if (document.visibilityState === 'hidden') return;
+                    
+                    db.collection(paths.presence).doc(user.uid).set({ 
+                        uid: user.uid, 
+                        name: userName, 
+                        color: userColor, 
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true }).catch(err => {
+                        if (err.code === 'resource-exhausted') clearInterval(heartbeat);
+                    });
+                };
+
                 updatePresence();
-                const heartbeat = setInterval(updatePresence, 30000);
-                const unsubP = db.collection(paths.presence).onSnapshot(snap => {
-                    const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                    setOnlineUsers(list);
-                });
-                const unsubL = db.collection(paths.logs).onSnapshot(snap => {
-                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                    logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                    setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                });
-                const unsubG = db.collection(paths.games).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                    setGames(data); setIsLoadingGames(false);
-                });
-                const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
-                    const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-                    setAllUserStatuses(data);
-                });
-                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
-                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => {
-                    if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies);
-                });
-                return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
+                const heartbeat = setInterval(updatePresence, 120000);
+                return () => clearInterval(heartbeat);
             }, [user, userName, userColor, paths]);
 
             useEffect(() => {
                 if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} }
-            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit]);
+            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm]);
 
             useEffect(() => {
                 if (!isModalOpen) return;
@@ -822,7 +890,14 @@
                                     <thead>
                                         <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
                                             <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-12 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</th>
+                                            <th className="px-1 py-5 w-20 text-center">
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    {!isEditLocked && (
+                                                        <Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400 transition-colors" title="重新排列編號並補齊缺失" onClick={() => setShowNormalizeConfirm(true)} />
+                                                    )}
+                                                    <span className="cursor-pointer hover:text-white" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</span>
+                                                </div>
+                                            </th>
                                             <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center">遊戲名稱</th>
@@ -848,7 +923,7 @@
                                                         const batch = db.batch(); newRoots.forEach((root, idx) => batch.update(db.collection(paths.games).doc(root.id), { order: idx + 1 }));
                                                         batch.commit();
                                                     }}
-                                                    onUpdateOrder={async (id, val) => { const order = parseInt(val); if (!isNaN(order)) await db.collection(paths.games).doc(id).update({ order }); }}
+                                                    onUpdateOrder={handleUpdateOrder}
                                                     onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }}
                                                     onNest={async (cid) => { if(draggedId && draggedId !== cid) await db.collection(paths.games).doc(draggedId).update({ parentId: cid }); }}
                                                     onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
@@ -890,7 +965,21 @@
                         </div>
                     </div>
 
-                    {/* 成就編輯彈窗 (優化: 點擊空白關閉，視感輕量，確認才儲存，0為空白) */}
+                    {/* 校正確認彈窗 */}
+                    {showNormalizeConfirm && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xs p-6 rounded shadow-2xl text-center">
+                                <h4 className="text-cyan-400 font-black mb-2 uppercase tracking-widest">編號重新校正</h4>
+                                <p className="text-xs text-slate-400 mb-6 font-bold leading-relaxed px-2">確定要重新排列所有遊戲編號並補齊中間缺失的號碼嗎？</p>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setShowNormalizeConfirm(false)} className="flex-1 py-2 bg-slate-900 text-[11px] font-black rounded border border-white/5 uppercase">取消</button>
+                                    <button onClick={handleNormalizeOrders} className="flex-1 py-2 bg-cyan-600 text-black text-[11px] font-black rounded shadow-lg active:scale-95 uppercase">執行校正</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 成就數據編輯彈窗 */}
                     {achievementEdit.gameId && (
                         <div 
                             className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -1025,7 +1114,6 @@
                         </div>
                     )}
 
-                    {/* 添加人員彈窗 */}
                     {newPersonnelInput.gameId && (
                         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
