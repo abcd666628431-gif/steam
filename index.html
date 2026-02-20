@@ -167,14 +167,14 @@
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
+        // 已更新為指定的 Firebase 配置
         const firebaseConfig = {
-            apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
-            authDomain: "cloud-714ce.firebaseapp.com",
-            projectId: "cloud-714ce",
-            storageBucket: "cloud-714ce.firebasestorage.app",
-            messagingSenderId: "793151737559",
-            appId: "1:793151737559:web:7e7def7c8012bc91542a92",
-            measurementId: "G-9QC9JZ6SB9"
+            apiKey: "AIzaSyDNYdJPpz9_7nC8eqdKxzQw3r_HSuc95ck",
+            authDomain: "steam2-43c65.firebaseapp.com",
+            projectId: "steam2-43c65",
+            storageBucket: "steam2-43c65.firebasestorage.app",
+            messagingSenderId: "724393722543",
+            appId: "1:724393722543:web:2824b735551700f080ca5a"
         };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -770,7 +770,6 @@
                         snap.docChanges().forEach(change => {
                             const data = { id: change.doc.id, ...change.doc.data() };
                             if (change.type === "added") {
-                                // 檢查是否已存在
                                 if (!newGames.find(g => g.id === data.id)) newGames.push(data);
                             } else if (change.type === "modified") {
                                 const idx = newGames.findIndex(g => g.id === data.id);
@@ -805,7 +804,6 @@
                 }, handleError);
                 activeUnsubscribers.push(unsubS);
 
-                // 其他較小數據路徑維持全量同步
                 activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
                     const list = []; const now = Date.now();
                     snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
@@ -844,7 +842,7 @@
 
             useEffect(() => {
                 if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} }
-            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm]);
+            }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm, isPageVisible]);
 
             useEffect(() => {
                 if (!isModalOpen) return;
