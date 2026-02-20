@@ -290,7 +290,7 @@
                             {!isChild ? (
                                 isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
                                 <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
-                            ) : null /* 子分組不顯示編號 */}
+                            ) : null}
                         </td>
                         <td className="px-4 text-center">
                             <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
@@ -535,7 +535,6 @@
                 } catch (err) { showNotify("同步失敗"); }
             }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
 
-            // 編號順延更新邏輯 (升級：支援分組內部順延)
             const handleUpdateOrder = async (id, val, pId = "") => {
                 const order = parseInt(val);
                 if (isNaN(order) || !db) return;
@@ -560,13 +559,11 @@
                 if (!db) return;
                 try {
                     const batch = db.batch();
-                    // 校正根遊戲
                     const sortedRoots = [...games.filter(g => !g.parentId)].sort((a, b) => (a.order || 0) - (b.order || 0));
                     sortedRoots.forEach((g, idx) => {
                         batch.update(db.collection(paths.games).doc(g.id), { order: idx + 1 });
                     });
                     
-                    // 校正所有子分組 DLC
                     const parents = new Set(games.filter(g => g.parentId).map(g => g.parentId));
                     parents.forEach(pId => {
                         const sortedChildren = games.filter(g => g.parentId === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -591,7 +588,6 @@
 
             const handleDrop = async (targetIdx, targetParentId) => {
                 if (!draggedId || !db) return;
-                // 僅允許在同一層級內拖拽排序
                 if (draggedParentId !== targetParentId) return;
 
                 const batch = db.batch();
@@ -624,31 +620,52 @@
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
             }, [games, allUserStatuses, statusLabels, currencies]);
 
+            // --- 修改：還原邏輯不再合併，而是覆蓋現有資料 ---
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; if (!file || !db) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
+                        showNotify("正在清除舊資料並導入...");
+
+                        // 1. 清除現有遊戲
+                        const gamesSnap = await db.collection(paths.games).get();
+                        const gBatch = db.batch();
+                        gamesSnap.forEach(doc => gBatch.delete(doc.ref));
+                        await gBatch.commit();
+
+                        // 2. 清除現有人員狀態
+                        const statusSnap = await db.collection(paths.statuses).get();
+                        const sBatch = db.batch();
+                        statusSnap.forEach(doc => sBatch.delete(doc.ref));
+                        await sBatch.commit();
+
+                        // 3. 寫入新遊戲
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                if (id) await db.collection(paths.games).doc(id).set(gd, { merge: true });
+                                if (id) await db.collection(paths.games).doc(id).set(gd);
                             }
                         }
+                        // 4. 寫入新狀態
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
                                 const docId = id || `${sd.gameId}_${sd.userId}`;
-                                await db.collection(paths.statuses).doc(docId).set(sd, { merge: true });
+                                await db.collection(paths.statuses).doc(docId).set(sd);
                             }
                         }
+                        // 5. 更新設定
                         if (data.settings) {
                             if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
                             if (data.settings.currencies) await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
                         }
-                        showNotify("備份已完整還原");
-                    } catch (err) { showNotify("還原失敗"); }
+                        showNotify("備份已完整還原（已覆蓋現有資料）");
+                    } catch (err) { 
+                        console.error(err);
+                        showNotify("還原失敗，請檢查格式"); 
+                    }
                 };
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
@@ -700,7 +717,6 @@
                     if (!children[g.parentId]) children[g.parentId] = []; 
                     children[g.parentId].push(g); 
                 });
-                // 排序 DLC
                 Object.keys(children).forEach(pId => {
                     children[pId].sort((a, b) => (parseInt(a.order)||0) - (parseInt(b.order)||0));
                 });
@@ -733,7 +749,6 @@
                 return () => unsub();
             }, []);
 
-            // 優化的資料監聽 useEffect (加入 Quota 耗盡後的自動中斷保護)
             useEffect(() => {
                 if (!isClient || !user || !db) return;
                 
@@ -783,13 +798,11 @@
                 return () => activeUnsubscribers.forEach(unsub => unsub());
             }, [user, paths, showNotify]);
 
-            // 優化的 Presence 心跳 (降低頻率至 120 秒，並加入 Visibility 判斷)
             useEffect(() => {
                 if (!isClient || !user || !db) return;
 
                 const updatePresence = () => {
                     if (document.visibilityState === 'hidden') return;
-                    
                     db.collection(paths.presence).doc(user.uid).set({ 
                         uid: user.uid, 
                         name: userName, 
@@ -844,7 +857,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.3</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
