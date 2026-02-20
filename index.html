@@ -237,9 +237,24 @@
             );
         });
 
+        // 修改：匯率換算函數，現在主要支持「從外幣換算回港幣」
+        const convertToHKD = (foreignVal, foreignCcy, rates) => {
+            if (!foreignVal || isNaN(foreignVal)) return foreignVal;
+            const num = parseFloat(foreignVal);
+            const rmbRate = parseFloat(rates.HKD_RMB) || 0.92;
+            const rubRate = parseFloat(rates.HKD_RUB) || 12.0;
+            const inrRate = parseFloat(rates.HKD_INR) || 10.5;
+
+            if (foreignCcy === 'RMB' || foreignCcy === 'CN¥') return (num / rmbRate).toFixed(1);
+            if (foreignCcy === 'руб') return (num / rubRate).toFixed(1);
+            if (foreignCcy === 'INR₹') return (num / inrRate).toFixed(1);
+            
+            return foreignVal; // 沒匹配到則維持原樣
+        };
+
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
-            personnel, nameColorMap, currencies, statusOptions,
+            personnel, nameColorMap, currencies, statusOptions, rates,
             onToggleGroup, onOpenEdit, onStartDrag, onDrop, 
             onUpdateOrder, onAddDLC, onNest, onUnnest, onAddPersonnel, onStatusUpdate, onDelete, onRemovePersonnel,
             onOpenAchievementEdit
@@ -308,23 +323,37 @@
                                             <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
                                                 {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                                             </select>
+                                            {/* 第一格：HK$ (不觸發對外換算) */}
                                             {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
                                                 <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
                                                     <select value={p.purchaseCurrency || currencies[0]} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
                                                         {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                                                     </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice || 0} onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" />
+                                                    <LocalNumberInput defaultValue={p.purchasePrice || 0} 
+                                                        onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} 
+                                                        className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" 
+                                                    />
                                                     {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
                                                 </div>
                                             ) : (
                                                 !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: currencies[0], userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
                                             )}
+                                            {/* 第二格：外幣 (觸發對第一格 HK$ 的自動換算) */}
                                             {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
                                                 <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
                                                     <select value={p.purchaseCurrency2 || currencies[2] || 'US$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
                                                         {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                                                     </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice2 || 0} onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice2: v, userName: p.userName })} className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" />
+                                                    <LocalNumberInput defaultValue={p.purchasePrice2 || 0} 
+                                                        onConfirm={(v) => {
+                                                            const updates = { purchasePrice2: v, userName: p.userName };
+                                                            // 邏輯：根據匯率自動更新第一格 HK$
+                                                            const hkdValue = convertToHKD(v, p.purchaseCurrency2, rates);
+                                                            if (hkdValue !== null) updates.purchasePrice = hkdValue;
+                                                            onStatusUpdate(g.id, p.userId, updates);
+                                                        }} 
+                                                        className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" 
+                                                    />
                                                     {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />}
                                                 </div>
                                             ) : (
@@ -376,7 +405,7 @@
             const [searchQuery, setSearchQuery] = useState(''); 
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
-            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥"]);
+            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB", "руб", "INR₹"]);
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
@@ -393,6 +422,10 @@
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
             const [isPageVisible, setIsPageVisible] = useState(true);
+            
+            // 匯率系統狀態
+            const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
+            const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -445,11 +478,7 @@
                 if (!db || !achievementEdit.userId || !achievementEdit.gameId) return;
                 const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                 try {
-                    // 使用 update 僅更新數值，減少傳輸
-                    await db.collection(paths.statuses).doc(docId).update({ 
-                        achTotal: parseInt(achievementEdit.total) || 0, 
-                        achCompleted: parseInt(achievementEdit.completed) || 0 
-                    });
+                    await db.collection(paths.statuses).doc(docId).update({ achTotal: parseInt(achievementEdit.total) || 0, achCompleted: parseInt(achievementEdit.completed) || 0 });
                     logActivity(`更新 [${achievementEdit.memberName}] 的成就`, achievementEdit.name);
                     showNotify("成就數據已同步");
                     setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
@@ -464,21 +493,24 @@
                     setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
                 } catch (err) { showNotify("儲存失敗"); }
             }, [statusLabels, paths, showNotify]);
+            
+            const handleUpdateRates = useCallback(async (e) => {
+                if (e) e.preventDefault();
+                if (!db) return;
+                try {
+                    await db.collection(paths.settings).doc('rates').set(exchangeRates);
+                    setIsRatesModalOpen(false); showNotify("匯率已同步");
+                } catch (err) { showNotify("匯率儲存失敗"); }
+            }, [exchangeRates, paths, showNotify]);
 
-            // --- 流量優化：修改時僅更新變動欄位，避免重傳 Base64 ---
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
                 if (!formData.name.trim() || !user || !db) return;
                 try {
                     if (editingId) {
-                        // 使用 update 僅更新變動內容
                         await db.collection(paths.games).doc(editingId).update({
-                            name: formData.name,
-                            price: formData.price,
-                            currency: formData.currency,
-                            url: formData.url,
-                            cover: formData.cover, // 這裡會傳圖片，但只有修改圖片時才應觸發
-                            addedBy: formData.addedBy || userName
+                            name: formData.name, price: formData.price, currency: formData.currency,
+                            url: formData.url, cover: formData.cover, addedBy: formData.addedBy || userName
                         }); 
                         logActivity("修改數據", formData.name); 
                     } else { 
@@ -502,7 +534,6 @@
                     const siblings = games.filter(g => (g.parentId || "") === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
                     siblings.forEach(g => {
                         if (g.id !== id && (g.order || 0) >= order) {
-                            // 僅 update order 欄位，不涉及圖片數據
                             batch.update(db.collection(paths.games).doc(g.id), { order: (g.order || 0) + 1 });
                         }
                     });
@@ -665,7 +696,7 @@
             useEffect(() => {
                 if (!isClient || !auth) return;
                 const initAuth = async () => {
-                    try { await auth.signInAnonymously(); } catch (e) { showNotify("權限異常"); }
+                    try { await auth.signInAnonymously(); } catch (e) { showNotify("身份驗證失敗"); }
                 };
                 initAuth();
                 const unsub = auth.onAuthStateChanged(u => setUser(u));
@@ -679,39 +710,29 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
-            // --- 核心優化：更精確的增量更新比對 ---
+            // 增量同步數據
             useEffect(() => {
                 if (!isClient || !user || !db || !isPageVisible) return;
                 let activeUnsubscribers = [];
                 const handleError = (err) => { if (err.code === 'permission-denied') showNotify("⚠️ 權限不足"); };
 
-                // 遊戲數據增量更新
                 activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
                     setGames(prev => {
                         let next = [...prev];
                         let hasChanges = false;
                         snap.docChanges().forEach(change => {
                             const data = { id: change.doc.id, ...change.doc.data() };
-                            if (change.type === "added") { 
-                                if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; }
-                            } else if (change.type === "modified") {
+                            if (change.type === "added") { if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; } }
+                            else if (change.type === "modified") {
                                 const i = next.findIndex(g => g.id === data.id);
-                                if (i > -1) {
-                                    // 深度比對：如果內容完全一樣（可能是 Metadata 變動），不觸發 React 更新
-                                    if (JSON.stringify(next[i]) !== JSON.stringify(data)) {
-                                        next[i] = data; hasChanges = true;
-                                    }
-                                }
-                            } else if (change.type === "removed") {
-                                next = next.filter(g => g.id !== data.id); hasChanges = true;
-                            }
+                                if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
+                            } else if (change.type === "removed") { next = next.filter(g => g.id !== data.id); hasChanges = true; }
                         });
                         return hasChanges ? next : prev;
                     });
                     setIsLoadingGames(false);
                 }, handleError));
 
-                // 狀態數據增量更新
                 activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
                     setAllUserStatuses(prev => {
                         let next = [...prev];
@@ -722,14 +743,12 @@
                             else if (change.type === "modified") { 
                                 const i = next.findIndex(s => s.id === data.id); 
                                 if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                            }
-                            else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
+                            } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
                         });
                         return hasChanges ? next : prev;
                     });
                 }, handleError));
 
-                // 日誌改為僅監聽最近 10 條以節省流量
                 activeUnsubscribers.push(db.collection(paths.logs).limit(10).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
@@ -744,11 +763,16 @@
 
                 activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, handleError));
                 activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); }, handleError));
+                
+                // 匯率同步
+                activeUnsubscribers.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => {
+                    if (doc.exists) setExchangeRates(doc.data());
+                }, handleError));
 
                 return () => activeUnsubscribers.forEach(unsub => unsub());
             }, [user, paths, isPageVisible]);
 
-            // 在線心跳：1 分鐘更新一次
+            // 在線心跳
             useEffect(() => {
                 if (!isClient || !user || !db) return;
                 const updatePresence = () => {
@@ -760,7 +784,7 @@
                 return () => clearInterval(heartbeat);
             }, [user, userName, userColor, paths]);
 
-            useEffect(() => { if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} } }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm, isPageVisible]);
+            useEffect(() => { if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} } }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm, isPageVisible, isRatesModalOpen]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -808,6 +832,7 @@
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                                     <div className="flex items-center gap-3">
                                         <span>成員統計</span>
+                                        <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" title="匯率設定" onClick={() => setIsRatesModalOpen(true)} />
                                         <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
                                         <Icon name="download" className="w-3.5 h-3.5 hover:text-white" onClick={handleExportData} />
                                         <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" onClick={() => importInputRef.current.click()} />
@@ -877,7 +902,7 @@
                                                 <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
                                                     statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
                                                     personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={handleToggleGroup} onOpenEdit={openEditModal}
-                                                    onStartDrag={handleStartDrag} onDrop={handleDrop} onUpdateOrder={handleUpdateOrder}
+                                                    onStartDrag={handleStartDrag} onDrop={handleDrop} onUpdateOrder={handleUpdateOrder} rates={exchangeRates}
                                                     onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }}
                                                     onNest={async (cid) => { if(draggedId && draggedId !== cid) await db.collection(paths.games).doc(draggedId).update({ parentId: cid }); }}
                                                     onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
@@ -890,7 +915,7 @@
                                                     <GameRow key={child.id} g={child} index={cIdx} isChild={true} isEditLocked={isEditLocked} draggedId={draggedId}
                                                         personnel={gamePersonnelMap[child.id] || []} nameColorMap={nameColorMap} currencies={currencies}
                                                         statusOptions={statusOptions} onOpenEdit={openEditModal} onStartDrag={handleStartDrag} onDrop={handleDrop}
-                                                        onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate}
+                                                        onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate} rates={exchangeRates}
                                                         onUnnest={async (id) => { await db.collection(paths.games).doc(id).update({ parentId: "" }); }}
                                                         onDelete={handleDeleteGame} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})}
                                                         onRemovePersonnel={async (id, name) => { if(confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }}
@@ -905,6 +930,39 @@
                         </div>
                     </div>
 
+                    {/* 匯率設定彈窗 */}
+                    {isRatesModalOpen && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                            <div className="bg-[#0b0e14] border border-green-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative">
+                                <h3 className="text-xl font-black mb-6 italic text-green-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Icon name="banknote" className="w-5 h-5" /> 手動匯率設定
+                                </h3>
+                                <div className="space-y-5">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > RMB (人民幣)</label>
+                                        <input type="number" step="0.01" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
+                                            value={exchangeRates.HKD_RMB} onChange={e => setExchangeRates({...exchangeRates, HKD_RMB: e.target.value})} />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > руб (盧布)</label>
+                                        <input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
+                                            value={exchangeRates.HKD_RUB} onChange={e => setExchangeRates({...exchangeRates, HKD_RUB: e.target.value})} />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">HK$ > INR₹ (盧比)</label>
+                                        <input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black"
+                                            value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 mt-8">
+                                    <button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button>
+                                    <button onClick={handleUpdateRates} className="flex-1 py-3 bg-green-600 text-black font-black rounded shadow-lg uppercase text-sm">儲存同步</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 校正確認彈窗 */}
                     {showNormalizeConfirm && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xs p-6 rounded shadow-2xl text-center">
@@ -917,8 +975,36 @@
                             </div>
                         </div>
                     )}
-                    
-                    {/* 其他彈窗邏輯維持不變... */}
+
+                    {/* 成就數據編輯彈窗 */}
+                    {achievementEdit.gameId && (
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}>
+                            <div className="bg-[#0b0e14] border border-amber-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center" onClick={(e) => e.stopPropagation()}>
+                                <div className="absolute top-0 left-0 w-full h-1 bg-amber-500"></div>
+                                <h3 className="text-xl font-black mb-1 text-amber-400 italic underline decoration-amber-500/30 decoration-4">成就數據同步</h3>
+                                <p className="text-[10px] text-slate-500 mb-6 font-bold truncate opacity-60 uppercase">{achievementEdit.name} - [{achievementEdit.memberName}]</p>
+                                <div className="grid grid-cols-2 gap-4 mb-8 text-center">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">完成數</label>
+                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-cyan-400 font-black text-2xl outline-none focus:border-cyan-500/50 transition-all text-center"
+                                            value={achievementEdit.completed === '0' || achievementEdit.completed === 0 ? '' : achievementEdit.completed}
+                                            onChange={e => setAchievementEdit({...achievementEdit, completed: e.target.value})} />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">總成就數</label>
+                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-white font-black text-2xl outline-none focus:border-slate-600 transition-all text-center"
+                                            value={achievementEdit.total === '0' || achievementEdit.total === 0 ? '' : achievementEdit.total}
+                                            onChange={e => setAchievementEdit({...achievementEdit, total: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })} className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase">放棄</button>
+                                    <button onClick={handleUpdateAchievements} className="flex-1 py-3 bg-amber-600 text-black text-[12px] font-black rounded shadow-lg uppercase">確認修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {isStatusSettingsOpen && (
                         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
