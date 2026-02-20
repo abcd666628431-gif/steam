@@ -199,7 +199,6 @@
             const percentage = total > 0 ? Math.min(Math.round((completed / total) * 100), 100) : 0;
             const offset = circumference - (percentage / 100) * circumference;
 
-            // 顏色邏輯：少於 50% 藍色, 大於或等於 50% 黃色, 100% 綠色
             let ringColor = "#3b82f6"; 
             if (total > 0) {
                 if (percentage === 100) ringColor = "#bef264"; 
@@ -301,11 +300,11 @@
                             <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
                         </td>
                         <td className="px-1" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex items-stretch gap-10 w-fit mx-auto min-h-[40px]">
-                                <div className="flex flex-col gap-1 shrink-0">
+                            <div className="flex items-center justify-center min-h-[40px] w-full">
+                                <div className="flex flex-col gap-1">
                                     {personnel.map(p => (
-                                        <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[380px] shrink-0">
-                                            <span className="font-black truncate w-20 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
+                                        <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[340px] shrink-0">
+                                            <span className="font-black truncate w-14 shrink-0" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
                                             <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
                                                 {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                                             </select>
@@ -337,22 +336,28 @@
                                             <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                         </div>
                                     ))}
-                                    {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[380px]">EMPTY MATRIX</div>}
+                                    {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[340px]">EMPTY MATRIX</div>}
                                 </div>
-                                <button 
-                                    onClick={() => onAddPersonnel(g.id)} 
-                                    className={`w-8 shrink-0 border border-dashed border-slate-800 text-slate-700 hover:text-cyan-500 hover:border-cyan-500/50 flex items-center justify-center transition-all bg-black/20 hover:bg-cyan-500/5 rounded ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-                                    title="添加人員"
-                                >
-                                    <span className="text-xl font-light opacity-50">+</span>
-                                </button>
                             </div>
                         </td>
                         <td className="px-4 text-center">
                             <AchievementRing completed={parseInt(g.achievementCompleted) || 0} total={parseInt(g.achievementTotal) || 0} isEditLocked={isEditLocked} onClick={() => !isEditLocked && onOpenAchievementEdit(g)} />
                         </td>
                         <td className="px-4 text-center">
-                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}><Icon name="trash-2" className="w-5 h-5" /></button>
+                            <div className="flex items-center justify-center gap-3">
+                                <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲">
+                                    <Icon name="trash-2" className="w-5 h-5" />
+                                </button>
+                                {!isEditLocked && (
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} 
+                                        className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" 
+                                        title="添加成員"
+                                    >
+                                        <Icon name="user-plus" className="w-5 h-5" />
+                                    </button>
+                                )}
+                            </div>
                         </td>
                     </tr>
                 </React.Fragment>
@@ -675,7 +680,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.1</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -765,9 +770,9 @@
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center cursor-pointer hover:bg-white/5" onClick={() => setSortConfig({key:'name', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc'})}>遊戲名稱</th>
                                             <th className="px-6 w-32 text-center">價格</th>
-                                            <th className="px-6 w-[450px] text-center">人員狀態</th>
+                                            <th className="px-6 w-[400px] text-center">人員狀態</th>
                                             <th className="px-4 w-16 text-center text-amber-400">成就進度</th>
-                                            <th className="px-4 w-16 text-center">操作</th>
+                                            <th className="px-4 w-24 text-center">操作</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-sm">
@@ -913,7 +918,7 @@
                             <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
                                 <h4 className="text-indigo-400 font-black mb-4 uppercase tracking-widest">添加遊戲人員</h4>
                                 <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400 font-black" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇人員 -</option>{tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 手動輸入 -</option></select>
-                                {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-800 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
+                                {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
                                 <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black rounded">取消</button><button onClick={async () => {
                                     const n = newPersonnelInput.name.trim(); if(!n || n === "_manual_") return;
                                     await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: currencies[0] });
