@@ -178,12 +178,12 @@
         };
 
         const firebaseConfig = {
-            apiKey: "AIzaSyBjQ9yIa7TyaYDRGsT_HPCpPHsgStiJE94",
-            authDomain: "cloud-714ce.firebaseapp.com",
-            projectId: "cloud-714ce",
-            storageBucket: "cloud-714ce.firebasestorage.app",
-            messagingSenderId: "793151737559",
-            appId: "1:793151737559:web:7e7def7c8012bc91542a92"
+            apiKey: "AIzaSyCUKIWAj3yDEVl-9s0J6dsuWv3fZ4mVKlw",
+            authDomain: "coffee-spark-ai-barista-ab434.firebaseapp.com",
+            projectId: "coffee-spark-ai-barista-ab434",
+            storageBucket: "coffee-spark-ai-barista-ab434.firebasestorage.app",
+            messagingSenderId: "447263468848",
+            appId: "1:447263468848:web:6ee534757a0342c394acf5"
         };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -219,7 +219,7 @@
                         {!isChild && (
                             isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
                             <input 
-                                key={g.id + '-' + g.order}
+                                key={g.id + '-' + (g.order || 0)}
                                 type="number" 
                                 className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" 
                                 defaultValue={g.order || 0} 
@@ -312,7 +312,7 @@
         });
 
         function App() {
-            // 1. States & Refs (變數聲明最優先)
+            // 1. States & Refs
             const [user, setUser] = useState(null);
             const [draggedId, setDraggedId] = useState(null);
             const [draggedIdx, setDraggedIdx] = useState(null);
@@ -337,7 +337,7 @@
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [activeFilter, setActiveFilter] = useState(null);
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
-            const [deleteConfirm, setDeleteConfirm] = useState(null); // { title, action }
+            const [deleteConfirm, setDeleteConfirm] = useState(null);
             const [statusLabels, setStatusLabels] = useState([
                 { id: 'unbought', label: '願望清單', color: '#ffffff' },
                 { id: 'bought', label: '已購買', color: '#67e8f9' },
@@ -357,7 +357,7 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
-            // 2. Memos (計算屬性)
+            // 2. Memos
             const statusOptions = useMemo(() => {
                 return statusLabels.map(l => ({ id: l.id, label: l.label, color: `text-white border-slate-500 bg-slate-700/30` }));
             }, [statusLabels]);
@@ -415,23 +415,26 @@
                 return { roots, children };
             }, [games, deferredSearchQuery, activeFilter, allUserStatuses, sortConfig]);
 
-            // 3. 事件回調
+            // 3. Callbacks
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
+
+            const logActivity = useCallback((action, gameName) => { 
+                if(isClient && db && user) {
+                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+                }
+            }, [userName, user, paths]);
 
             const handleUpdateOrder = useCallback(async (targetId, newValue) => {
                 const newOrderValue = parseInt(newValue);
-                if (isNaN(newOrderValue) || !db) return;
-
+                if (isNaN(newOrderValue) || !db || !user) return;
                 try {
                     const roots = games.filter(g => !g.parentId);
                     const targetGame = roots.find(g => g.id === targetId);
                     if (!targetGame) return;
-
                     const currentSorted = [...roots].sort((a, b) => (parseInt(a.order) || 0) - (parseInt(b.order) || 0));
                     const remaining = currentSorted.filter(g => g.id !== targetId);
                     const insertIndex = Math.max(0, Math.min(newOrderValue - 1, remaining.length));
                     remaining.splice(insertIndex, 0, targetGame);
-
                     const batch = db.batch();
                     remaining.forEach((game, idx) => {
                         const finalOrder = idx + 1;
@@ -439,19 +442,10 @@
                             batch.update(db.collection(paths.games).doc(game.id), { order: finalOrder });
                         }
                     });
-
                     await batch.commit();
                     showNotify(`編號校準完成`);
-                } catch (e) {
-                    showNotify("編號更新失敗");
-                }
-            }, [db, games, paths, showNotify]);
-
-            const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user) {
-                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
-                }
-            }, [userName, user, paths]);
+                } catch (e) { showNotify("編號更新失敗"); }
+            }, [db, games, paths, showNotify, user]);
 
             const handleToggleGroup = useCallback((id) => {
                 setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -461,7 +455,7 @@
                 setActiveFilter(prev => {
                     if (prev?.userName === name && prev?.statusId === sid) return null;
                     const labelObj = statusLabels.find(l => l.id === sid);
-                    showNotify(`飾選：${name} - ${labelObj?.label || sid}`);
+                    showNotify(`篩選：${name} - ${labelObj?.label || sid}`);
                     return { userName: name, statusId: sid };
                 });
             }, [statusLabels, showNotify]);
@@ -483,12 +477,12 @@
 
             const handleUpdateLabels = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!db) return;
+                if (!db || !user) return;
                 try {
                     await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
                     setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
                 } catch (err) { showNotify("儲存失敗"); }
-            }, [statusLabels, paths, showNotify]);
+            }, [statusLabels, paths, showNotify, user]);
 
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
@@ -509,7 +503,7 @@
             }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify]);
 
             const handleDeleteGame = useCallback(async (game) => {
-                if(!db) return;
+                if(!db || !user) return;
                 setDeleteConfirm({
                     title: `確定從矩陣中抹除 [${game.name}] ?`,
                     action: async () => {
@@ -521,15 +515,15 @@
                         } catch (e) { showNotify("刪除失敗"); }
                     }
                 });
-            }, [db, paths, logActivity, showNotify]);
+            }, [db, paths, logActivity, showNotify, user]);
 
             const handleNestGame = useCallback(async (childId, parentId) => {
-                if (isEditLocked || !childId || childId === parentId || !db) return;
+                if (isEditLocked || !childId || childId === parentId || !db || !user) return;
                 try {
                     await db.collection(paths.games).doc(childId).update({ parentId });
                     showNotify("已放入分組");
                 } catch (e) { showNotify("分組失敗"); }
-            }, [isEditLocked, db, paths, showNotify]);
+            }, [isEditLocked, db, paths, showNotify, user]);
 
             const handleExportData = useCallback(() => {
                 const backup = { version: "6.5", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
@@ -538,31 +532,37 @@
             }, [games, allUserStatuses, statusLabels, currencies]);
 
             const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file || !db) return;
+                const file = e.target.files[0]; if (!file || !db || !user) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
                         if (data.games) {
+                            const batch = db.batch();
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                await db.collection(paths.games).doc(id || undefined).set(gd, { merge: true });
+                                if(id) {
+                                    batch.set(db.collection(paths.games).doc(id), gd, { merge: true });
+                                } else {
+                                    batch.set(db.collection(paths.games).doc(), gd);
+                                }
                             }
+                            await batch.commit();
                         }
                         showNotify("導入完成");
                     } catch (err) { showNotify("導入失敗"); }
                 };
                 reader.readAsText(file);
-            }, [db, paths, showNotify]);
+            }, [db, paths, showNotify, user]);
 
             const handleAddPersonnel = useCallback(async (gameId) => {
                 const name = newPersonnelInput.name.trim(); 
-                if (!name || name === "_manual_" || !db) return;
+                if (!name || name === "_manual_" || !db || !user) return;
                 const targetUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const defaultSid = statusLabels[0]?.id || 'unbought';
                 await handleStatusUpdate(gameId, targetUserId, { userName: name, userColor: nameColorMap[name] || '#fff', status: defaultSid, purchasePrice: '0', purchaseCurrency: currencies[0] });
                 setNewPersonnelInput({ gameId: null, name: '' });
-            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels]);
+            }, [newPersonnelInput, db, nameColorMap, currencies, handleStatusUpdate, statusLabels, user]);
 
             const addNewStatusGroup = () => {
                 const newId = `status_${Date.now()}`;
@@ -588,42 +588,91 @@
                 }
             }, []);
 
+            // RULE 3 - Authentication FIRST
             useEffect(() => {
                 if (!isClient || !auth) return;
-                const initAuth = async () => { try { await auth.signInAnonymously(); } catch (e) {} };
+                let isMounted = true;
+                
+                const initAuth = async () => { 
+                    try { 
+                        const cred = await auth.signInAnonymously(); 
+                        if (isMounted) {
+                            setUser(cred.user);
+                        }
+                    } catch (e) {
+                        console.error("Auth failed:", e);
+                    } 
+                };
+
                 initAuth();
-                const unsub = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsub();
+                const unsub = auth.onAuthStateChanged(u => {
+                    if (isMounted) setUser(u);
+                });
+                
+                return () => {
+                    isMounted = false;
+                    unsub();
+                };
             }, []);
 
+            // Data listener - ONLY access after authentication is complete
             useEffect(() => {
                 if (!isClient || !user || !db) return;
-                const updatePresence = () => {
-                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+                const errorHandler = (err) => {
+                    console.error("Firestore error:", err);
                 };
+
+                const updatePresence = () => {
+                    if (!user) return;
+                    db.collection(paths.presence).doc(user.uid).set({ 
+                        uid: user.uid, 
+                        name: userName, 
+                        color: userColor, 
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp() 
+                    }, { merge: true }).catch(errorHandler);
+                };
+                
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 30000);
+
                 const unsubP = db.collection(paths.presence).onSnapshot(snap => {
                     const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
+                    snap.forEach(doc => { 
+                        const d = doc.data(); 
+                        if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); 
+                    });
                     setOnlineUsers(list);
-                });
+                }, errorHandler);
+
                 const unsubL = db.collection(paths.logs).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                     setActivityLogs(logs.slice(0, 30)); setIsLoadingLogs(false);
-                });
+                }, errorHandler);
+
                 const unsubG = db.collection(paths.games).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setGames(data); setIsLoadingGames(false);
-                });
+                }, errorHandler);
+
                 const unsubS = db.collection(paths.statuses).onSnapshot(snap => {
                     const data = []; snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(data);
-                });
-                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); });
-                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); });
-                return () => { clearInterval(heartbeat); unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); };
+                }, errorHandler);
+
+                const unsubLabels = db.collection(paths.settings).doc('labels').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); 
+                }, errorHandler);
+
+                const unsubGlobal = db.collection(paths.settings).doc('global').onSnapshot(doc => { 
+                    if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); 
+                }, errorHandler);
+
+                return () => { 
+                    clearInterval(heartbeat); 
+                    unsubP(); unsubL(); unsubG(); unsubS(); unsubLabels(); unsubGlobal(); 
+                };
             }, [user, userName, userColor, paths]);
 
             useEffect(() => {
@@ -734,7 +783,7 @@
                                         <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                         {activeFilter && (
                                             <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs animate-pulse">
-                                                <span className="font-black text-cyan-400">正在飾選: {activeFilter.userName} - {statusLabels.find(l=>l.id === activeFilter.statusId)?.label || activeFilter.statusId}</span>
+                                                <span className="font-black text-cyan-400">正在篩選: {activeFilter.userName} - {statusLabels.find(l=>l.id === activeFilter.statusId)?.label || activeFilter.statusId}</span>
                                                 <button onClick={() => setActiveFilter(null)} className="text-white hover:text-red-500"><Icon name="x-circle" className="w-4 h-4" /></button>
                                             </div>
                                         )}
