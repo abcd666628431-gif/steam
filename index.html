@@ -129,7 +129,7 @@
         // --- 工具函數 ---
         const formatDate = (ts) => { 
             if (!ts) return "LIVE"; 
-            const date = new Date(ts.toMillis()); 
+            const date = new Date(ts.toMillis ? ts.toMillis() : ts); 
             return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
         };
 
@@ -397,8 +397,8 @@
             const [userName, setUserName] = useState('載入中...');
             const [userColor, setUserColor] = useState('#22d3ee');
             const [isEditingName, setIsEditingName] = useState(false);
-            const [games, setGames] = useState([]); 
-            const [allUserStatuses, setAllUserStatuses] = useState([]); 
+            const [games, setGames] = useState(() => safeGetStorage('steam_cache_games', [])); 
+            const [allUserStatuses, setAllUserStatuses] = useState(() => safeGetStorage('steam_cache_statuses', [])); 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingId, setEditingId] = useState(null); 
             const [formData, setFormData] = useState({ name: '', addedBy: '', price: '0', currency: 'HK$', url: '', cover: null, parentId: '' });
@@ -427,6 +427,9 @@
             const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
             const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
             const [isApiDisabled, setIsApiDisabled] = useState(false);
+            
+            // 同步時間狀態
+            const [syncInfo, setSyncInfo] = useState({ last: '本地', next: '計算中' });
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -695,9 +698,20 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
+            // --- 流量與快取優化監聽器 ---
             useEffect(() => {
                 if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
                 let activeUnsubscribers = [];
+                
+                const updateSyncTime = () => {
+                    const now = new Date();
+                    const next = new Date(now.getTime() + 60 * 60 * 1000);
+                    setSyncInfo({
+                        last: `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`,
+                        next: `${next.getHours().toString().padStart(2,'0')}:${next.getMinutes().toString().padStart(2,'0')}`
+                    });
+                };
+
                 const handleError = (err) => {
                     console.error("Firestore Error:", err);
                     if (err.message.includes("Cloud Firestore API has not been used")) setIsApiDisabled(true);
@@ -706,42 +720,47 @@
                 };
 
                 const subscribe = () => {
+                    // 增量模式同步：僅更新變動部分並存入本地快取
                     activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
                         setGames(prev => {
                             let next = [...prev];
-                            let hasChanges = false;
+                            let changed = false;
                             snap.docChanges().forEach(change => {
                                 const data = { id: change.doc.id, ...change.doc.data() };
-                                if (change.type === "added") { if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; } }
-                                else if (change.type === "modified") {
-                                    const i = next.findIndex(g => g.id === data.id);
-                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                                } else if (change.type === "removed") { next = next.filter(g => g.id !== data.id); hasChanges = true; }
+                                if (change.type === "added") { if(!next.some(x=>x.id===data.id)) { next.push(data); changed = true; } }
+                                else if (change.type === "modified") { 
+                                    const idx = next.findIndex(x=>x.id===data.id);
+                                    if(idx > -1) { next[idx] = data; changed = true; }
+                                }
+                                else if (change.type === "removed") { next = next.filter(x=>x.id!==data.id); changed = true; }
                             });
-                            return hasChanges ? next : prev;
+                            if (changed) safeSetStorage('steam_cache_games', next);
+                            return changed ? next : prev;
                         });
                         setIsLoadingGames(false);
+                        updateSyncTime();
                     }, handleError));
 
                     activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
                         setAllUserStatuses(prev => {
                             let next = [...prev];
-                            let hasChanges = false;
+                            let changed = false;
                             snap.docChanges().forEach(change => {
                                 const data = { id: change.doc.id, ...change.doc.data() };
-                                if (change.type === "added") { if (!next.find(s => s.id === data.id)) { next.push(data); hasChanges = true; } }
+                                if (change.type === "added") { if(!next.some(x=>x.id===data.id)) { next.push(data); changed = true; } }
                                 else if (change.type === "modified") { 
-                                    const i = next.findIndex(s => s.id === data.id); 
-                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                                } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
+                                    const idx = next.findIndex(x=>x.id===data.id);
+                                    if(idx > -1) { next[idx] = data; changed = true; }
+                                }
+                                else if (change.type === "removed") { next = next.filter(x=>x.id!==data.id); changed = true; }
                             });
-                            return hasChanges ? next : prev;
+                            if (changed) safeSetStorage('steam_cache_statuses', next);
+                            return changed ? next : prev;
                         });
                     }, handleError));
 
-                    activeUnsubscribers.push(db.collection(paths.logs).limit(10).onSnapshot(snap => {
+                    activeUnsubscribers.push(db.collection(paths.logs).orderBy('timestamp', 'desc').limit(10).onSnapshot(snap => {
                         const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                        logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
                         setActivityLogs(logs); setIsLoadingLogs(false);
                     }, handleError));
 
@@ -801,7 +820,7 @@
                 return () => document.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
-            useEffect(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }, [onlineUsers, activityLogs, games, isModalOpen, achievementEdit, isStatusSettingsOpen, isRatesModalOpen]);
+            useEffect(() => { if (typeof lucide !== 'undefined') lucide.createIcons(); }, [onlineUsers, activityLogs, games, isModalOpen, achievementEdit, isStatusSettingsOpen, isRatesModalOpen, syncInfo]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -829,7 +848,14 @@
                         </header>
                         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 mb-8">
                             <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 p-4 h-[180px] overflow-hidden flex flex-col rounded shadow-inner">
-                                <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
+                                <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs">
+                                    <Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌
+                                    <span className="ml-auto text-[10px] text-slate-600 flex gap-2">
+                                        <span>同步: {syncInfo.last}</span>
+                                        <span className="text-slate-800">|</span>
+                                        <span>下次: {syncInfo.next}</span>
+                                    </span>
+                                </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
                                     {isLoadingLogs ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
                                         <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMap[log.userName] }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
