@@ -441,7 +441,7 @@
 
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; 
-                if (!file || !db || isUsingCache) return;
+                if (!file || !db) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
@@ -478,7 +478,7 @@
                     } catch (err) { showNotify("還原格式錯誤"); }
                 };
                 reader.readAsText(file);
-            }, [db, paths, isUsingCache, showNotify]);
+            }, [db, paths, showNotify]);
 
             // --- 流量救星核心：1 小時快取優先邏輯 ---
             useEffect(() => {
@@ -744,7 +744,7 @@
                                     <div className="flex items-center gap-3">
                                         <span>成員統計</span>
                                         <Icon name="download" className="w-3.5 h-3.5 hover:text-white" title="導出 JSON 備份" onClick={handleExportData} />
-                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" title="導入 JSON 備份" onClick={() => !isUsingCache && importInputRef.current.click()} />
+                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" title="導入 JSON 備份" onClick={() => importInputRef.current.click()} />
                                         <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" title="匯率設定" onClick={() => setIsRatesModalOpen(true)} />
                                         <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
@@ -785,12 +785,7 @@
                                     <thead>
                                         <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
                                             <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-20 text-center">
-                                                <div className="flex items-center justify-center gap-1.5">
-                                                    {!isEditLocked && !isUsingCache && <Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400" onClick={() => setShowNormalizeConfirm(true)} />}
-                                                    <span>編號</span>
-                                                </div>
-                                            </th>
+                                            <th className="px-1 py-5 w-20 text-center">編號</th>
                                             <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center">遊戲名稱</th>
@@ -802,15 +797,10 @@
                                     </thead>
                                     <tbody className="text-sm">
                                         {isLoadingGames && !isUsingCache ? (<tr><td colSpan="9" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING...</td></tr>) : hierarchy.roots.map((g, i) => (
-                                            <React.Fragment key={g.id}>
-                                                <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
-                                                    statusOptions={statusLabels.map(o => ({id: o.id, label: o.label}))} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
-                                                    personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={(id) => setExpandedGroups(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; })} onOpenEdit={openEditModal}
-                                                    onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onDrop={async (tidx, tpid) => { if(draggedId && draggedParentId === tpid && !isUsingCache) { const sibs = games.filter(x => (x.parentId||"") === tpid).sort((a,b)=>(a.order||0)-(b.order||0)); const list = [...sibs]; const [removed] = list.splice(draggedIdx, 1); list.splice(tidx, 0, removed); const b = db.batch(); list.forEach((it, idx) => b.update(db.collection(paths.games).doc(it.id), {order: idx+1})); await b.commit(); setDraggedId(null); } }} onUpdateOrder={handleUpdateOrder} rates={exchangeRates} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }} onNest={async (cid) => { if(draggedId && draggedId !== cid && !isUsingCache) await db.collection(paths.games).doc(draggedId).update({ parentId: cid }); }} onUnnest={async (id) => { if(!isUsingCache) await db.collection(paths.games).doc(id).update({ parentId: "" }); }} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onRemovePersonnel={async (id, name) => { if(!isUsingCache && confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} />
-                                                {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child, cIdx) => (
-                                                    <GameRow key={child.id} g={child} index={cIdx} isChild={true} isEditLocked={isEditLocked} draggedId={draggedId} personnel={gamePersonnelMap[child.id] || []} nameColorMap={nameColorMap} currencies={currencies} statusOptions={statusLabels} onOpenEdit={openEditModal} onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onDrop={async (tidx, tpid) => { if(draggedId && draggedParentId === tpid && !isUsingCache) { const sibs = games.filter(x => (x.parentId||"") === tpid).sort((a,b)=>(a.order||0)-(b.order||0)); const list = [...sibs]; const [removed] = list.splice(draggedIdx, 1); list.splice(tidx, 0, removed); const b = db.batch(); list.forEach((it, idx) => b.update(db.collection(paths.games).doc(it.id), {order: idx+1})); await b.commit(); setDraggedId(null); } }} onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate} rates={exchangeRates} onUnnest={async (id) => { if(!isUsingCache) await db.collection(paths.games).doc(id).update({ parentId: "" }); }} onDelete={handleDeleteGame} onAddPersonnel={(id) => setNewPersonnelInput({gameId: id, name: ''})} onRemovePersonnel={async (id, name) => { if(!isUsingCache && confirm(`移除 ${name}?`)) await db.collection(paths.statuses).doc(id).delete(); }} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} />
-                                                ))}
-                                            </React.Fragment>
+                                            <GameRow key={g.id} g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
+                                                statusOptions={statusLabels.map(o => ({id: o.id, label: o.label}))} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
+                                                personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={(id) => setExpandedGroups(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; })} onOpenEdit={openEditModal}
+                                                onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} rates={exchangeRates} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} />
                                         ))}
                                     </tbody>
                                 </table>
