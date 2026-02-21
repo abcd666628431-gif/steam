@@ -47,28 +47,15 @@
             animation: shimmer 4s linear infinite;
         }
         @keyframes shimmer { to { background-position: 200% center; } }
-        .dragging {
-            opacity: 0.5;
-            background: rgba(79, 70, 229, 0.2) !important;
-        }
+        .dragging { opacity: 0.5; background: rgba(79, 70, 229, 0.2) !important; }
         .drag-handle { cursor: grab; }
         .drag-handle:active { cursor: grabbing; }
         input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
         input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        .dlc-indent {
-            padding-left: 2.5rem !important;
-            position: relative;
-        }
-        .dlc-indent::before {
-            content: ""; position: absolute; left: 1.25rem; top: 0; bottom: 50%; width: 2px; background: #1e293b;
-        }
-        .dlc-indent::after {
-            content: ""; position: absolute; left: 1.25rem; top: 50%; width: 1rem; height: 2px; background: #1e293b;
-        }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .dlc-indent { padding-left: 2.5rem !important; position: relative; }
+        .dlc-indent::before { content: ""; position: absolute; left: 1.25rem; top: 0; bottom: 50%; width: 2px; background: #1e293b; }
+        .dlc-indent::after { content: ""; position: absolute; left: 1.25rem; top: 50%; width: 1rem; height: 2px; background: #1e293b; }
         .mode-locked .edit-only { display: none !important; }
 
         .filter-active {
@@ -78,12 +65,7 @@
             border-radius: 4px;
         }
 
-        .modal-field-container {
-            display: grid;
-            grid-template-cols: 80px 1fr;
-            align-items: center;
-            gap: 0.5rem;
-        }
+        .modal-field-container { display: grid; grid-template-cols: 80px 1fr; align-items: center; gap: 0.5rem; }
         .modal-input-base {
             background: rgba(0,0,0,0.4);
             border: 1px solid rgba(255,255,255,0.05);
@@ -91,11 +73,7 @@
             padding: 0.5rem 0.75rem;
             transition: all 0.3s ease;
         }
-        .modal-input-base:focus {
-            border-bottom-color: #22d3ee;
-            background: rgba(0,0,0,0.6);
-            outline: none;
-        }
+        .modal-input-base:focus { border-bottom-color: #22d3ee; background: rgba(0,0,0,0.6); outline: none; }
 
         .achievement-bar-wrapper {
             background: rgba(0, 0, 0, 0.5);
@@ -172,11 +150,9 @@
         const Icon = memo(({ name, className, onClick, title }) => {
             useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
             return (
-                <span 
-                    onClick={(e) => { if(onClick) { e.stopPropagation(); onClick(e); } }} 
-                    className={`inline-flex items-center justify-center cursor-pointer ${className || ''}`}
-                    title={title}
-                >
+                <span onClick={(e) => { if(onClick) { e.stopPropagation(); onClick(e); } }} 
+                      className={`inline-flex items-center justify-center cursor-pointer ${className || ''}`}
+                      title={title}>
                     <i data-lucide={name} className="w-full h-full"></i>
                 </span>
             );
@@ -186,14 +162,9 @@
             const [val, setVal] = useState(defaultValue);
             useEffect(() => { setVal(defaultValue); }, [defaultValue]);
             return (
-                <input 
-                    type="number" 
-                    value={val} 
-                    className={className} 
-                    placeholder={placeholder}
+                <input type="number" value={val} className={className} placeholder={placeholder}
                     onChange={(e) => setVal(e.target.value)} 
-                    onBlur={() => { if(val !== defaultValue) onConfirm(val); }} 
-                />
+                    onBlur={() => { if(val !== defaultValue) onConfirm(val); }} />
             );
         };
 
@@ -209,10 +180,8 @@
             } else { barColorClass = "bg-slate-700 opacity-20"; }
 
             return (
-                <div 
-                    className={`flex items-center gap-1 h-9 w-full transition-all duration-300 ${!isEditLocked ? 'cursor-pointer hover:bg-white/5 px-1 rounded' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); if(!isEditLocked) onClick(); }}
-                >
+                <div className={`flex items-center gap-1 h-9 w-full transition-all duration-300 ${!isEditLocked ? 'cursor-pointer hover:bg-white/5 px-1 rounded' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); if(!isEditLocked) onClick(); }}>
                     <div className="achievement-bar-wrapper">
                         <div className={`h-full transition-all duration-700 ease-out ${barColorClass}`} style={{ width: `${percentage}%` }}></div>
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -228,18 +197,6 @@
             );
         });
 
-        const convertToHKD = (foreignVal, foreignCcy, rates) => {
-            if (!foreignVal || isNaN(foreignVal)) return foreignVal;
-            const num = parseFloat(foreignVal);
-            const rmbRate = parseFloat(rates.HKD_RMB) || 1;
-            const rubRate = parseFloat(rates.HKD_RUB) || 1;
-            const inrRate = parseFloat(rates.HKD_INR) || 1;
-            if (foreignCcy === 'RMB¥') return (num / rmbRate).toFixed(1);
-            if (foreignCcy === 'РУБ₽') return (num / rubRate).toFixed(1);
-            if (foreignCcy === 'INR₹') return (num / inrRate).toFixed(1);
-            return foreignVal; 
-        };
-
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
             personnel, nameColorMap, currencies, statusOptions, rates,
@@ -249,115 +206,95 @@
         }) => {
             const addedByColor = nameColorMap[g.addedBy] || '#818cf8';
             return (
-                <React.Fragment>
-                    <tr onDragOver={(e)=>e.preventDefault()} onDrop={() => !isEditLocked && onDrop(index, g.parentId || "")} onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))} className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
-                        <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex flex-col items-center gap-2">
-                                {!isEditLocked && (
-                                    <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
-                                )}
-                                {!isChild && hasChildren && (
-                                    <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
-                                )}
+                <tr onDragOver={(e)=>e.preventDefault()} onDrop={() => !isEditLocked && onDrop(index, g.parentId || "")} 
+                    onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))} 
+                    className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
+                    <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex flex-col items-center gap-2">
+                            {!isEditLocked && (
+                                <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
+                            )}
+                            {!isChild && hasChildren && (
+                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
+                            )}
+                        </div>
+                    </td>
+                    <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
+                        {!isChild ? (
+                            isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
+                            <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
+                        ) : null}
+                    </td>
+                    <td className="px-4 text-center">
+                        <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                        <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
+                            {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
+                        </div>
+                    </td>
+                    <td className="px-6 py-8 text-center selectable-cell">
+                        <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-2">
+                                <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
+                                {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
                             </div>
-                        </td>
-                        <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
-                            {!isChild ? (
-                                isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
-                                <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
-                            ) : null}
-                        </td>
-                        <td className="px-4 text-center">
-                            <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                            <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
-                                {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
-                            </div>
-                        </td>
-                        <td className="px-6 py-8 text-center selectable-cell">
-                            <div className="flex flex-col items-center gap-1">
-                                <div className="flex items-center gap-2">
-                                    <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
-                                    {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
-                                </div>
-                                {!isEditLocked && (
-                                    <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
-                                        {!isChild && (
-                                            <div className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black" onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}} onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}>
-                                                <Icon name="folder-plus" className="w-3 h-3 mr-1" />放入分組
-                                            </div>
-                                        )}
-                                        {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
-                                    </div>
-                                )}
-                            </div>
-                        </td>
-                        <td className="px-6 text-center font-black text-2xl">
-                            <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
-                        </td>
-                        <td className="px-1" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex items-center justify-center min-h-[40px] w-full">
-                                <div className="flex flex-col gap-1">
-                                    {personnel.map(p => (
-                                        <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[340px] shrink-0 text-white/90">
-                                            <span className="font-black truncate w-12 shrink-0 text-left" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
-                                            <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
-                                                {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
-                                            </select>
-                                            {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
-                                                    <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice || 0} onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" />
-                                                    {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-                                            {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
-                                                    <select value={p.purchaseCurrency2 || 'RMB¥'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice2 || 0} onConfirm={(v) => {
-                                                            const updates = { purchasePrice2: v, userName: p.userName };
-                                                            const hkdValue = convertToHKD(v, p.purchaseCurrency2 || 'RMB¥', rates);
-                                                            if (hkdValue !== null) updates.purchasePrice = hkdValue;
-                                                            onStatusUpdate(g.id, p.userId, updates);
-                                                        }} className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" />
-                                                    {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />}
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: 'RMB¥', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-                                            <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
+                            {!isEditLocked && (
+                                <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
+                                    {!isChild && (
+                                        <div className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black" onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}} onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}>
+                                            <Icon name="folder-plus" className="w-3 h-3 mr-1" />放入分組
                                         </div>
-                                    ))}
-                                    {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[340px]">EMPTY MATRIX</div>}
+                                    )}
+                                    {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
                                 </div>
-                            </div>
-                        </td>
-                        <td className="px-4 text-center">
-                            <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
-                                {personnel.map(p => (
-                                    <AchievementBar key={p.id} completed={p.achCompleted} total={p.achTotal} isEditLocked={isEditLocked} onClick={() => onOpenAchievementEdit(g, p)} />
-                                ))}
-                                {personnel.length === 0 && <div className="h-9"></div>}
-                            </div>
-                        </td>
-                        <td className="px-4 text-center">
-                            <div className="flex items-center justify-center gap-3">
-                                <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
-                                {!isEditLocked && (
-                                    <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>
-                                )}
-                            </div>
-                        </td>
-                    </tr>
-                </React.Fragment>
+                            )}
+                        </div>
+                    </td>
+                    <td className="px-6 text-center font-black text-2xl">
+                        <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
+                    </td>
+                    <td className="px-1" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex flex-col gap-1">
+                            {personnel.map(p => (
+                                <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[340px] shrink-0 text-white/90">
+                                    <span className="font-black truncate w-12 shrink-0 text-left" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
+                                    <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
+                                        {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                                    </select>
+                                    {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
+                                        <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
+                                            <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
+                                                {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                            </select>
+                                            <LocalNumberInput defaultValue={p.purchasePrice || 0} onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" />
+                                            {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
+                                        </div>
+                                    ) : (
+                                        !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
+                                    )}
+                                    <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
+                                </div>
+                            ))}
+                        </div>
+                    </td>
+                    <td className="px-4 text-center">
+                        <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
+                            {personnel.map(p => (
+                                <AchievementBar key={p.id} completed={p.achCompleted} total={p.achTotal} isEditLocked={isEditLocked} onClick={() => onOpenAchievementEdit(g, p)} />
+                            ))}
+                        </div>
+                    </td>
+                    <td className="px-4 text-center">
+                        <div className="flex items-center justify-center gap-3">
+                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
+                            {!isEditLocked && (
+                                <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>
+                            )}
+                        </div>
+                    </td>
+                </tr>
             );
         });
 
@@ -379,7 +316,7 @@
             const [searchQuery, setSearchQuery] = useState(''); 
             const [isEditLocked, setIsEditLocked] = useState(true);
             const [expandedGroups, setExpandedGroups] = useState(new Set());
-            const [currencies, setCurrencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB¥", "РУБ₽", "INR₹"]);
+            const [currencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB¥", "РУБ₽", "INR₹"]);
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
             const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
             const [draggedId, setDraggedId] = useState(null);
@@ -419,100 +356,63 @@
                 }
             }, [userName, user, paths, isUsingCache]);
 
-            const handleExportData = useCallback(() => {
-                const backup = { 
-                    version: "6.6", 
-                    games, 
-                    statuses: allUserStatuses, 
-                    settings: { statusLabels, exchangeRates } 
-                };
-                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a'); 
-                a.href = URL.createObjectURL(blob); 
-                a.download = `steam_backup_${Date.now()}.json`; 
-                a.click();
-                showNotify("備份文件已生成");
-            }, [games, allUserStatuses, statusLabels, exchangeRates]);
-
-            // --- 修復導入還原邏輯：加入遞歸 Timestamp 轉換器 ---
+            // --- 導出與導入邏輯 ---
             const restoreTimestamps = (obj) => {
                 if (obj && typeof obj === 'object') {
-                    if (obj.seconds !== undefined && obj.nanoseconds !== undefined) {
-                        return new firebase.firestore.Timestamp(obj.seconds, obj.nanoseconds);
-                    }
-                    for (const key in obj) {
-                        obj[key] = restoreTimestamps(obj[key]);
-                    }
+                    if (obj.seconds !== undefined && obj.nanoseconds !== undefined) return new firebase.firestore.Timestamp(obj.seconds, obj.nanoseconds);
+                    for (const key in obj) obj[key] = restoreTimestamps(obj[key]);
                 }
                 return obj;
             };
 
+            const handleExportData = useCallback(() => {
+                const backup = { version: "6.8", games, statuses: allUserStatuses, settings: { statusLabels, exchangeRates } };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
+                showNotify("備份文件已生成");
+            }, [games, allUserStatuses, statusLabels, exchangeRates]);
+
             const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; 
-                if (!file || !db) return;
+                const file = e.target.files[0]; if (!file || !db) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        if(!confirm("導入將會永久清除當前雲端所有數據並覆蓋，確定繼續？")) return;
-                        
-                        showNotify("正在重置數據庫並上傳備份...");
-                        
-                        // 1. 分段清除雲端舊數據 (避免 500 限制)
+                        if(!confirm("導入將清除雲端數據，確定繼續？")) return;
+                        showNotify("正在重置數據庫...");
                         const gSnap = await db.collection(paths.games).get();
                         const sSnap = await db.collection(paths.statuses).get();
-                        
                         const deleteDoc = async (snap) => {
-                            let count = 0;
-                            let batch = db.batch();
-                            for (const doc of snap.docs) {
-                                batch.delete(doc.ref);
-                                count++;
-                                if (count === 400) {
-                                    await batch.commit();
-                                    batch = db.batch();
-                                    count = 0;
-                                }
-                            }
+                            let count = 0; let batch = db.batch();
+                            for (const doc of snap.docs) { batch.delete(doc.ref); count++; if (count === 400) { await batch.commit(); batch = db.batch(); count = 0; } }
                             if (count > 0) await batch.commit();
                         };
-
-                        await deleteDoc(gSnap);
-                        await deleteDoc(sSnap);
-
-                        // 2. 還原時間戳並逐個寫入
+                        await deleteDoc(gSnap); await deleteDoc(sSnap);
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                const restoredData = restoreTimestamps(gd);
-                                await db.collection(paths.games).doc(id).set(restoredData);
+                                await db.collection(paths.games).doc(id).set(restoreTimestamps(gd));
                             }
                         }
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
-                                const restoredData = restoreTimestamps(sd);
-                                await db.collection(paths.statuses).doc(id || `${sd.gameId}_${sd.userId}`).set(restoredData);
+                                await db.collection(paths.statuses).doc(id || `${sd.gameId}_${sd.userId}`).set(restoreTimestamps(sd));
                             }
                         }
-                        
-                        // 3. 上傳設定
                         if (data.settings) {
                             if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
                             if (data.settings.exchangeRates) await db.collection(paths.settings).doc('rates').set(data.settings.exchangeRates);
                         }
-                        
                         localStorage.removeItem(`steam_matrix_cache_${appId}`);
-                        showNotify("導入成功，即將重啟系統");
-                        setTimeout(() => window.location.reload(), 1500);
-                    } catch (err) { 
-                        console.error(err);
-                        showNotify("導入失敗：備份格式錯誤或權限不足"); 
-                    }
+                        showNotify("導入成功，即將刷新");
+                        setTimeout(() => window.location.reload(), 1000);
+                    } catch (err) { showNotify("導入失敗"); }
                 };
                 reader.readAsText(file);
-            }, [db, paths, showNotify]);
+            }, [db, paths]);
 
+            // --- 流量救星核心邏輯 ---
             useEffect(() => {
                 const CACHE_KEY = `steam_matrix_cache_${appId}`;
                 const cacheData = safeGetStorage(CACHE_KEY, null);
@@ -525,31 +425,30 @@
                     if (cacheData.rates) setExchangeRates(cacheData.rates);
                     setCacheTimestamp(cacheData.timestamp);
                     setIsUsingCache(true);
-                    setIsLoadingGames(false); 
-                    setIsLoadingLogs(false);
+                    setIsLoadingGames(false); setIsLoadingLogs(false);
                 } else { setIsUsingCache(false); }
-            }, [paths]);
+            }, []);
 
+            // 優化效能：大幅降低快取寫入頻率至 10 秒
             useEffect(() => {
                 if (isLoadingGames || isUsingCache) return;
                 const timer = setTimeout(() => {
                     const nowTs = Date.now();
                     safeSetStorage(`steam_matrix_cache_${appId}`, {
-                        games, statuses: allUserStatuses, logs: activityLogs, labels: statusLabels, rates: exchangeRates,
-                        timestamp: nowTs
+                        games, statuses: allUserStatuses, logs: activityLogs, labels: statusLabels, rates: exchangeRates, timestamp: nowTs
                     });
                     setCacheTimestamp(nowTs);
-                }, 2000);
+                }, 10000);
                 return () => clearTimeout(timer);
             }, [games, allUserStatuses, activityLogs, statusLabels, exchangeRates, isLoadingGames, isUsingCache]);
 
+            // --- Firebase 初始化 ---
             useEffect(() => {
                 if (!auth) return;
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            try { await auth.signInWithCustomToken(__initial_auth_token); } 
-                            catch (tokenErr) { await auth.signInAnonymously(); }
+                            try { await auth.signInWithCustomToken(__initial_auth_token); } catch { await auth.signInAnonymously(); }
                         } else { await auth.signInAnonymously(); }
                     } catch (err) { console.error("Auth Fail", err); }
                 };
@@ -560,127 +459,34 @@
 
             useEffect(() => {
                 if (!isClient || !user || !db || isUsingCache) return;
-                let activeUnsubscribers = [];
+                let unsub = [];
                 const handleError = (err) => { if (err.code === 'resource-exhausted') setIsQuotaExceeded(true); };
-
-                activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
+                unsub.push(db.collection(paths.games).onSnapshot(snap => {
                     const list = []; snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
                     setGames(list); setIsLoadingGames(false);
                 }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
+                unsub.push(db.collection(paths.statuses).onSnapshot(snap => {
                     const list = []; snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
                     setAllUserStatuses(list);
                 }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.logs).orderBy('timestamp', 'desc').limit(15).onSnapshot(snap => {
+                unsub.push(db.collection(paths.logs).orderBy('timestamp', 'desc').limit(15).onSnapshot(snap => {
                     const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                     setActivityLogs(logs); setIsLoadingLogs(false);
                 }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
+                unsub.push(db.collection(paths.presence).onSnapshot(snap => {
                     const list = []; const now = Date.now();
                     snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
                     setOnlineUsers(list);
                 }, handleError));
-
-                activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, handleError));
-                activeUnsubscribers.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); }, handleError));
-
-                return () => activeUnsubscribers.forEach(unsub => unsub());
-            }, [user, paths, isUsingCache]);
+                unsub.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists) setStatusLabels(doc.data().list); }, handleError));
+                unsub.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); }, handleError));
+                return () => unsub.forEach(u => u());
+            }, [user, isUsingCache, paths]);
 
             const handleForceRefresh = () => { localStorage.removeItem(`steam_matrix_cache_${appId}`); window.location.reload(); };
 
-            const handleStatusUpdate = async (gameId, targetUserId, updates) => {
-                if (isUsingCache) { showNotify("⚠️ 保護模式不可操作"); return; }
-                const docId = `${gameId}_${targetUserId}`;
-                if (user && targetUserId === user.uid) { updates.userName = userName; updates.userColor = userColor; }
-                await db.collection(paths.statuses).doc(docId).set({ 
-                    gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates 
-                }, { merge: true });
-            };
-
-            const handleSaveGame = async (e) => {
-                if (e) e.preventDefault();
-                if (!formData.name.trim() || !user || !db || isUsingCache) return;
-                try {
-                    if (editingId) {
-                        await db.collection(paths.games).doc(editingId).update({ ...formData, addedBy: formData.addedBy || userName });
-                        logActivity("修改數據", formData.name); 
-                    } else { 
-                        const nextOrder = games.length > 0 ? Math.max(...games.map(s => parseInt(s.order) || 0)) + 1 : 1;
-                        await db.collection(paths.games).add({ ...formData, addedBy: formData.addedBy || userName, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
-                        logActivity("錄入", formData.name); 
-                    }
-                    showNotify("同步成功"); closeModal();
-                } catch (err) { showNotify("失敗"); }
-            };
-
-            const handleDeleteGame = useCallback(async (game) => {
-                if(!db || !confirm(`確定刪除 ${game.name}?`) || isUsingCache) return;
-                await db.collection(paths.games).doc(game.id).delete();
-                logActivity("刪除", game.name);
-            }, [db, paths, isUsingCache]);
-
-            const handleUpdateOrder = async (id, val) => {
-                if (isUsingCache) return;
-                const order = parseInt(val);
-                if (isNaN(order) || !db) return;
-                await db.collection(paths.games).doc(id).update({ order });
-                showNotify("編號更新");
-            };
-
-            const handleNormalizeOrders = async () => {
-                if (isUsingCache) return;
-                const batch = db.batch();
-                const sorted = [...games].sort((a, b) => (a.order || 0) - (b.order || 0));
-                sorted.forEach((g, idx) => batch.update(db.collection(paths.games).doc(g.id), { order: idx + 1 }));
-                await batch.commit();
-                showNotify("編號校正完畢");
-                setShowNormalizeConfirm(false);
-            };
-
-            const closeModal = useCallback(() => { 
-                setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); 
-            }, [currencies]);
-
-            const openEditModal = useCallback((g) => { 
-                if (isUsingCache) { showNotify("⚠️ 保護模式不可編輯"); return; }
-                setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); 
-            }, [currencies, isUsingCache]);
-
-            useEffect(() => {
-                if (isClient) {
-                    setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
-                    setUserColor(safeGetStorage('steam_user_color', '#22d3ee'));
-                }
-            }, []);
-
-            useEffect(() => {
-                if (!isModalOpen) return;
-                const handlePaste = async (event) => {
-                    const item = event.clipboardData?.items[0];
-                    if (item && item.type.indexOf("image") !== -1) {
-                        const reader = new FileReader();
-                        reader.onload = async (e) => {
-                            const compressed = await compressImage(e.target.result);
-                            setFormData(prev => ({ ...prev, cover: compressed }));
-                            showNotify("封面貼入");
-                        };
-                        reader.readAsDataURL(item.getAsFile());
-                    }
-                };
-                document.addEventListener('paste', handlePaste);
-                return () => document.removeEventListener('paste', handlePaste);
-            }, [isModalOpen]);
-
-            const tableMemberNames = useMemo(() => {
-                const names = new Set();
-                allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
-                return Array.from(names).sort();
-            }, [allUserStatuses]);
-
+            // --- 重要：修正順序以防止 ReferenceError ---
+            
             const nameColorMap = useMemo(() => {
                 const map = {};
                 allUserStatuses.forEach(s => { if (s.userColor) map[s.userName] = s.userColor; });
@@ -688,6 +494,21 @@
                 map[userName] = userColor;
                 return map;
             }, [onlineUsers, allUserStatuses, userName, userColor]);
+
+            const tableMemberNames = useMemo(() => {
+                const names = new Set();
+                allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
+                return Array.from(names).sort();
+            }, [allUserStatuses]);
+
+            const allMembersStats = useMemo(() => {
+                return tableMemberNames.map(name => {
+                    const userStatuses = allUserStatuses.filter(s => s.userName === name);
+                    const stats = {};
+                    statusLabels.forEach(l => { stats[l.id] = userStatuses.filter(s => s.status === l.id).length; });
+                    return { name, color: nameColorMap[name] || '#ffffff', stats };
+                });
+            }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
             const gamePersonnelMap = useMemo(() => {
                 const map = {};
@@ -708,14 +529,52 @@
                 return { roots, children };
             }, [games, searchQuery]);
 
-            const allMembersStats = useMemo(() => {
-                return tableMemberNames.map(name => {
-                    const userStatuses = allUserStatuses.filter(s => s.userName === name);
-                    const stats = {};
-                    statusLabels.forEach(l => { stats[l.id] = userStatuses.filter(s => s.status === l.id).length; });
-                    return { name, color: nameColorMap[name] || '#ffffff', stats };
-                });
-            }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
+            // --- 操作 Handlers ---
+            const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
+                if (isUsingCache) { showNotify("⚠️ 保護模式不可操作"); return; }
+                const docId = `${gameId}_${targetUserId}`;
+                if (user && targetUserId === user.uid) { updates.userName = userName; updates.userColor = userColor; }
+                await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, ...updates }, { merge: true });
+            }, [isUsingCache, user, userName, userColor, paths]);
+
+            const handleSaveGame = async (e) => {
+                if (e) e.preventDefault();
+                if (!formData.name.trim() || !user || !db || isUsingCache) return;
+                try {
+                    if (editingId) {
+                        await db.collection(paths.games).doc(editingId).update({ ...formData, addedBy: formData.addedBy || userName });
+                        logActivity("修改數據", formData.name); 
+                    } else { 
+                        const nextOrder = games.length > 0 ? Math.max(...games.map(s => parseInt(s.order) || 0)) + 1 : 1;
+                        await db.collection(paths.games).add({ ...formData, addedBy: formData.addedBy || userName, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
+                        logActivity("錄入", formData.name); 
+                    }
+                    showNotify("成功同步"); closeModal();
+                } catch (err) { showNotify("失敗"); }
+            };
+
+            const handleDeleteGame = useCallback(async (game) => {
+                if(!db || !confirm(`確定刪除 ${game.name}?`) || isUsingCache) return;
+                await db.collection(paths.games).doc(game.id).delete();
+                logActivity("刪除", game.name);
+            }, [db, paths, isUsingCache]);
+
+            const handleUpdateOrder = async (id, val) => {
+                if (isUsingCache) return;
+                const order = parseInt(val);
+                if (isNaN(order) || !db) return;
+                await db.collection(paths.games).doc(id).update({ order });
+                showNotify("編號更新");
+            };
+
+            const closeModal = useCallback(() => { 
+                setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); 
+            }, [currencies]);
+
+            const openEditModal = useCallback((g) => { 
+                if (isUsingCache) { showNotify("⚠️ 快取模式不可編輯"); return; }
+                setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); 
+            }, [currencies, isUsingCache]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -723,7 +582,7 @@
                         <div className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center text-center">
                             <Icon name="alert-circle" className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
                             <h2 className="text-2xl font-black mb-2">Firebase 配額已達上限</h2>
-                            <p className="text-slate-500 max-w-sm">流量過大或免費額度已用完，請點擊日誌旁的刷新按鈕或稍候再試。</p>
+                            <p className="text-slate-500 max-w-sm">流量過大或免費額度已用完，請稍候再試。</p>
                             <button onClick={()=>window.location.reload()} className="mt-8 px-8 py-3 bg-indigo-600 rounded-full font-black">重新連接</button>
                         </div>
                     )}
@@ -734,7 +593,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v6.6</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v6.8</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -756,7 +615,7 @@
                                             </span>
                                         )}
                                     </div>
-                                    <Icon name="refresh-ccw" className="w-4 h-4 text-slate-700 hover:text-white transition-colors" title="強制清除快取並刷新連線" onClick={handleForceRefresh} />
+                                    <Icon name="refresh-ccw" className="w-4 h-4 text-slate-700 hover:text-white transition-colors" title="強制刷新連線" onClick={handleForceRefresh} />
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
                                     {isLoadingLogs && !isUsingCache ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
@@ -841,7 +700,8 @@
                                             <GameRow key={g.id} g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
                                                 statusOptions={statusLabels.map(o => ({id: o.id, label: o.label}))} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
                                                 personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={(id) => setExpandedGroups(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; })} onOpenEdit={openEditModal}
-                                                onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} rates={exchangeRates} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} />
+                                                onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} rates={exchangeRates} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} 
+                                                onDrop={async (tidx, tpid) => { if(draggedId && draggedParentId === tpid && !isUsingCache) { const sibs = games.filter(x => (x.parentId||"") === tpid).sort((a,b)=>(a.order||0)-(b.order||0)); const list = [...sibs]; const [removed] = list.splice(draggedIdx, 1); list.splice(tidx, 0, removed); const b = db.batch(); list.forEach((it, idx) => b.update(db.collection(paths.games).doc(it.id), {order: idx+1})); await b.commit(); setDraggedId(null); } }} />
                                         ))}
                                     </tbody>
                                 </table>
@@ -849,6 +709,7 @@
                         </div>
                     </div>
 
+                    {/* MODALS */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                             <form onSubmit={handleSaveGame} className="bg-[#0b0e14] border border-cyan-500/30 w-full max-lg p-8 rounded shadow-2xl space-y-4">
@@ -861,8 +722,8 @@
                                 </div>
                                 <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">商店連結</label><input className="modal-input-base text-white" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} /></div>
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-xs font-black text-slate-500 uppercase">封面</label>
-                                    <input className="modal-input-base flex-grow text-[11px]" value={formData.cover || ''} onChange={e => setFormData({...formData, cover: e.target.value})} placeholder="Paste or input URL..." />
+                                    <label className="text-xs font-black text-slate-500 uppercase">封面 (URL)</label>
+                                    <input className="modal-input-base flex-grow text-[11px]" value={formData.cover || ''} onChange={e => setFormData({...formData, cover: e.target.value})} placeholder="Paste URL here..." />
                                     {formData.cover && <div className="h-32 bg-black border border-slate-800 rounded mt-2 overflow-hidden"><img src={formData.cover} className="w-full h-full object-contain" /></div>}
                                 </div>
                                 <div className="flex gap-4 mt-8 pt-4"><button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-black rounded shadow-lg uppercase text-sm">儲存同步</button></div>
@@ -874,11 +735,13 @@
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-sm p-8 rounded shadow-2xl">
                                 <h3 className="text-lg font-black mb-4 text-cyan-400">添加參與成員</h3>
-                                <input autoFocus className="modal-input-base w-full text-white" value={newPersonnelInput.name} placeholder="成員名稱..." onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} onKeyDown={e => e.key === 'Enter' && (async () => {
-                                    if (!newPersonnelInput.name.trim()) return;
-                                    await handleStatusUpdate(newPersonnelInput.gameId, crypto.randomUUID(), { userName: newPersonnelInput.name, status: 'unbought' });
-                                    setNewPersonnelInput({ gameId: null, name: '' });
-                                })()} />
+                                <input autoFocus className="modal-input-base w-full text-white" value={newPersonnelInput.name} placeholder="成員名稱..." 
+                                    onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} 
+                                    onKeyDown={e => e.key === 'Enter' && (async () => {
+                                        if (!newPersonnelInput.name.trim()) return;
+                                        await handleStatusUpdate(newPersonnelInput.gameId, crypto.randomUUID(), { userName: newPersonnelInput.name, status: 'unbought' });
+                                        setNewPersonnelInput({ gameId: null, name: '' });
+                                    })()} />
                                 <div className="flex gap-2 mt-6"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-900 rounded font-black text-xs">取消</button><button onClick={async () => {
                                     if (!newPersonnelInput.name.trim()) return;
                                     await handleStatusUpdate(newPersonnelInput.gameId, crypto.randomUUID(), { userName: newPersonnelInput.name, status: 'unbought' });
@@ -901,8 +764,7 @@
                                     if (isUsingCache) return;
                                     const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                                     await db.collection(paths.statuses).doc(docId).update({ achTotal: parseInt(achievementEdit.total) || 0, achCompleted: parseInt(achievementEdit.completed) || 0 });
-                                    showNotify("成就數據已同步");
-                                    setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
+                                    showNotify("成就數據已同步"); setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
                                 }} className="flex-1 py-3 bg-amber-500 text-black rounded font-black text-xs">儲存數據</button></div>
                             </div>
                         </div>
