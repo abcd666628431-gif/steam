@@ -94,7 +94,45 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo, memo, useCallback } = React;
         
+        // --- 1. 核心工具函數定義 (必須放在組件外最上方以防 ReferenceError) ---
         const isClient = typeof window !== 'undefined';
+        
+        const safeGetStorage = (key, fallback) => {
+            if (!isClient) return fallback;
+            try {
+                const item = localStorage.getItem(key);
+                return item ? JSON.parse(item) : fallback;
+            } catch (e) { return fallback; }
+        };
+
+        const safeSetStorage = (key, value) => {
+            if (!isClient) return;
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+        };
+
+        const formatDate = (ts) => { 
+            if (!ts) return "LIVE"; 
+            const date = typeof ts === 'number' ? new Date(ts) : (typeof ts.toMillis === 'function' ? new Date(ts.toMillis()) : new Date(ts)); 
+            return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
+        };
+
+        const compressImage = (dataUrl, maxWidth = 400) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width; let height = img.height;
+                    if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
+                    canvas.width = width; canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.7));
+                };
+                img.src = dataUrl;
+            });
+        };
+
+        // --- 2. 配置與組件定義 ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v5';
 
         const firebaseConfig = {
@@ -110,49 +148,11 @@
         const db = isClient ? firebase.firestore() : null;
         const auth = isClient ? firebase.auth() : null;
 
-        const formatDate = (ts) => { 
-            if (!ts) return "LIVE"; 
-            const date = typeof ts === 'number' ? new Date(ts) : (typeof ts.toMillis === 'function' ? new Date(ts.toMillis()) : new Date(ts)); 
-            return `${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`; 
-        };
-
-        const compressImage = (dataUrl, maxWidth = 400) => {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width; let height = img.height;
-                    if (width > maxWidth) {
-                        height = Math.round((height * maxWidth) / width);
-                        width = maxWidth;
-                    }
-                    canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                };
-                img.src = dataUrl;
-            });
-        };
-
-        const safeGetStorage = (key, fallback) => {
-            if (!isClient) return fallback;
-            try {
-                const item = localStorage.getItem(key);
-                return item ? JSON.parse(item) : fallback;
-            } catch (e) { return fallback; }
-        };
-        const safeSetStorage = (key, value) => {
-            if (!isClient) return;
-            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
-        };
-
         const Icon = memo(({ name, className, onClick, title }) => {
             useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
             return (
                 <span onClick={(e) => { if(onClick) { e.stopPropagation(); onClick(e); } }} 
-                      className={`inline-flex items-center justify-center cursor-pointer ${className || ''}`}
-                      title={title}>
+                      className={`inline-flex items-center justify-center cursor-pointer ${className || ''}`} title={title}>
                     <i data-lucide={name} className="w-full h-full"></i>
                 </span>
             );
@@ -173,11 +173,10 @@
             const completedNum = parseInt(completed) || 0;
             if (isEditLocked && totalNum === 0) return <div className="h-9"></div>;
             const percentage = totalNum > 0 ? Math.min(Math.round((completedNum / totalNum) * 100), 100) : 0;
-            let barColorClass = "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.4)]"; 
-            if (totalNum > 0) {
-                if (percentage === 100) barColorClass = "bg-lime-400 shadow-[0_0_12px_rgba(163,230,53,0.4)]";
-                else if (percentage >= 50) barColorClass = "bg-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.4)]";
-            } else { barColorClass = "bg-slate-700 opacity-20"; }
+            let barColorClass = percentage === 100 ? "bg-lime-400 shadow-[0_0_12px_rgba(163,230,53,0.4)]" : 
+                               percentage >= 50 ? "bg-yellow-400 shadow-[0_0_12px_rgba(250,204,21,0.4)]" : 
+                               "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.4)]";
+            if (totalNum === 0) barColorClass = "bg-slate-700 opacity-20";
 
             return (
                 <div className={`flex items-center gap-1 h-9 w-full transition-all duration-300 ${!isEditLocked ? 'cursor-pointer hover:bg-white/5 px-1 rounded' : ''}`}
@@ -199,10 +198,8 @@
 
         const GameRow = memo(({ 
             g, index, isChild, isEditLocked, draggedId, isExpanded, hasChildren,
-            personnel, nameColorMap, currencies, statusOptions, rates,
-            onToggleGroup, onOpenEdit, onStartDrag, onDrop, 
-            onUpdateOrder, onAddDLC, onNest, onUnnest, onAddPersonnel, onStatusUpdate, onDelete, onRemovePersonnel,
-            onOpenAchievementEdit
+            personnel, nameColorMap, statusOptions, onToggleGroup, onOpenEdit, onStartDrag, onDrop, 
+            onUpdateOrder, onAddDLC, onStatusUpdate, onDelete, onOpenAchievementEdit
         }) => {
             const addedByColor = nameColorMap[g.addedBy] || '#818cf8';
             return (
@@ -211,19 +208,13 @@
                     className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
                     <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
                         <div className="flex flex-col items-center gap-2">
-                            {!isEditLocked && (
-                                <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
-                            )}
-                            {!isChild && hasChildren && (
-                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
-                            )}
+                            {!isEditLocked && <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>}
+                            {!isChild && hasChildren && <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />}
                         </div>
                     </td>
-                    <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
-                        {!isChild ? (
-                            isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
-                            <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
-                        ) : null}
+                    <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`}>
+                        {!isChild ? (isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
+                        <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />) : null}
                     </td>
                     <td className="px-4 text-center">
                         <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
@@ -242,19 +233,11 @@
                             {!isEditLocked && (
                                 <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
-                                    {!isChild && (
-                                        <div className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black" onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}} onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}>
-                                            <Icon name="folder-plus" className="w-3 h-3 mr-1" />放入分組
-                                        </div>
-                                    )}
-                                    {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
                                 </div>
                             )}
                         </div>
                     </td>
-                    <td className="px-6 text-center font-black text-2xl">
-                        <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
-                    </td>
+                    <td className="px-6 text-center font-black text-2xl"><span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}</td>
                     <td className="px-1" onClick={(e)=>e.stopPropagation()}>
                         <div className="flex flex-col gap-1">
                             {personnel.map(p => (
@@ -264,17 +247,12 @@
                                         {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                                     </select>
                                     {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
-                                        <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
-                                            <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
-                                                {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                            </select>
+                                        <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 relative">
+                                            <span className="text-[9px] text-slate-500 w-9 font-bold text-center">{p.purchaseCurrency || 'HK$'}</span>
                                             <LocalNumberInput defaultValue={p.purchasePrice || 0} onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" />
-                                            {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
                                         </div>
-                                    ) : (
-                                        !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
-                                    )}
-                                    <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
+                                    ) : (!isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 font-black text-xs">+ $</button>)}
+                                    <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                 </div>
                             ))}
                         </div>
@@ -288,10 +266,8 @@
                     </td>
                     <td className="px-4 text-center">
                         <div className="flex items-center justify-center gap-3">
-                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
-                            {!isEditLocked && (
-                                <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>
-                            )}
+                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
+                            {!isEditLocked && <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>}
                         </div>
                     </td>
                 </tr>
@@ -307,8 +283,6 @@
             const [userName, setUserName] = useState('載入中...');
             const [userColor, setUserColor] = useState('#22d3ee');
             const [isEditingName, setIsEditingName] = useState(false);
-            const [games, setGames] = useState([]); 
-            const [allUserStatuses, setAllUserStatuses] = useState([]); 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingId, setEditingId] = useState(null); 
             const [formData, setFormData] = useState({ name: '', addedBy: '', price: '0', currency: 'HK$', url: '', cover: null, parentId: '' });
@@ -318,175 +292,28 @@
             const [expandedGroups, setExpandedGroups] = useState(new Set());
             const [currencies] = useState(["HK$", "NT$", "US$", "JP¥", "CN¥", "RMB¥", "РУБ₽", "INR₹"]);
             const [newPersonnelInput, setNewPersonnelInput] = useState({ gameId: null, name: '' });
-            const [sortConfig, setSortConfig] = useState({ key: 'order', direction: 'asc' });
-            const [draggedId, setDraggedId] = useState(null);
-            const [draggedIdx, setDraggedIdx] = useState(null);
-            const [draggedParentId, setDraggedParentId] = useState("");
             const [activeFilter, setActiveFilter] = useState(null);
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
-            const [statusLabels, setStatusLabels] = useState([
-                { id: 'unbought', label: '願望清單', color: '#ffffff' },
-                { id: 'bought', label: '已購買', color: '#67e8f9' },
-                { id: 'playing', label: '遊玩中', color: '#f0abfc' },
-                { id: 'completed', label: '已完成', color: '#bef264' }
-            ]);
+            const [statusLabels, setStatusLabels] = useState([{ id: 'unbought', label: '願望清單', color: '#ffffff' }, { id: 'bought', label: '已購買', color: '#67e8f9' }, { id: 'playing', label: '遊玩中', color: '#f0abfc' }, { id: 'completed', label: '已完成', color: '#bef264' }]);
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
-            const [isPageVisible, setIsPageVisible] = useState(true);
             const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
             const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
-            const [isUsingCache, setIsUsingCache] = useState(false);
-            const [cacheTimestamp, setCacheTimestamp] = useState(null);
+            
+            // --- 本地記錄優先機制 ---
+            const [games, setGames] = useState(() => safeGetStorage(`steam_matrix_cache_${appId}`, {}).games || []);
+            const [allUserStatuses, setAllUserStatuses] = useState(() => safeGetStorage(`steam_matrix_cache_${appId}`, {}).statuses || []);
+            const [cacheTimestamp, setCacheTimestamp] = useState(() => safeGetStorage(`steam_matrix_cache_${appId}`, {}).timestamp);
+            const [isSyncing, setIsSyncing] = useState(true);
             const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
             const importInputRef = useRef(null);
-            const paths = useMemo(() => ({
-                presence: `/artifacts/${appId}/public/data/presence`,
-                logs: `/artifacts/${appId}/public/data/activity_logs`,
-                games: `/artifacts/${appId}/public/data/games`,
-                statuses: `/artifacts/${appId}/public/data/user_statuses`,
-                settings: `/artifacts/${appId}/public/data/settings`
-            }), []);
+            const paths = useMemo(() => ({ presence: `/artifacts/${appId}/public/data/presence`, logs: `/artifacts/${appId}/public/data/activity_logs`, games: `/artifacts/${appId}/public/data/games`, statuses: `/artifacts/${appId}/public/data/user_statuses`, settings: `/artifacts/${appId}/public/data/settings` }), []);
 
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
+            const logActivity = useCallback((action, gameName) => { if(isClient && db && user) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {}); }, [userName, user, paths]);
 
-            const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user && !isUsingCache) {
-                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
-                }
-            }, [userName, user, paths, isUsingCache]);
-
-            // --- 導出與導入邏輯 ---
-            const restoreTimestamps = (obj) => {
-                if (obj && typeof obj === 'object') {
-                    if (obj.seconds !== undefined && obj.nanoseconds !== undefined) return new firebase.firestore.Timestamp(obj.seconds, obj.nanoseconds);
-                    for (const key in obj) obj[key] = restoreTimestamps(obj[key]);
-                }
-                return obj;
-            };
-
-            const handleExportData = useCallback(() => {
-                const backup = { version: "6.8", games, statuses: allUserStatuses, settings: { statusLabels, exchangeRates } };
-                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
-                showNotify("備份文件已生成");
-            }, [games, allUserStatuses, statusLabels, exchangeRates]);
-
-            const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file || !db) return;
-                const reader = new FileReader();
-                reader.onload = async (ev) => {
-                    try {
-                        const data = JSON.parse(ev.target.result);
-                        if(!confirm("導入將清除雲端數據，確定繼續？")) return;
-                        showNotify("正在重置數據庫...");
-                        const gSnap = await db.collection(paths.games).get();
-                        const sSnap = await db.collection(paths.statuses).get();
-                        const deleteDoc = async (snap) => {
-                            let count = 0; let batch = db.batch();
-                            for (const doc of snap.docs) { batch.delete(doc.ref); count++; if (count === 400) { await batch.commit(); batch = db.batch(); count = 0; } }
-                            if (count > 0) await batch.commit();
-                        };
-                        await deleteDoc(gSnap); await deleteDoc(sSnap);
-                        if (data.games) {
-                            for (const g of data.games) {
-                                const { id, ...gd } = g;
-                                await db.collection(paths.games).doc(id).set(restoreTimestamps(gd));
-                            }
-                        }
-                        if (data.statuses) {
-                            for (const s of data.statuses) {
-                                const { id, ...sd } = s;
-                                await db.collection(paths.statuses).doc(id || `${sd.gameId}_${sd.userId}`).set(restoreTimestamps(sd));
-                            }
-                        }
-                        if (data.settings) {
-                            if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
-                            if (data.settings.exchangeRates) await db.collection(paths.settings).doc('rates').set(data.settings.exchangeRates);
-                        }
-                        localStorage.removeItem(`steam_matrix_cache_${appId}`);
-                        showNotify("導入成功，即將刷新");
-                        setTimeout(() => window.location.reload(), 1000);
-                    } catch (err) { showNotify("導入失敗"); }
-                };
-                reader.readAsText(file);
-            }, [db, paths]);
-
-            // --- 流量救星核心邏輯 ---
-            useEffect(() => {
-                const CACHE_KEY = `steam_matrix_cache_${appId}`;
-                const cacheData = safeGetStorage(CACHE_KEY, null);
-                const ONE_HOUR = 3600000;
-                if (cacheData && cacheData.timestamp && (Date.now() - cacheData.timestamp < ONE_HOUR)) {
-                    setGames(cacheData.games || []);
-                    setAllUserStatuses(cacheData.statuses || []);
-                    setActivityLogs(cacheData.logs || []);
-                    if (cacheData.labels) setStatusLabels(cacheData.labels);
-                    if (cacheData.rates) setExchangeRates(cacheData.rates);
-                    setCacheTimestamp(cacheData.timestamp);
-                    setIsUsingCache(true);
-                    setIsLoadingGames(false); setIsLoadingLogs(false);
-                } else { setIsUsingCache(false); }
-            }, []);
-
-            // 優化效能：大幅降低快取寫入頻率至 10 秒
-            useEffect(() => {
-                if (isLoadingGames || isUsingCache) return;
-                const timer = setTimeout(() => {
-                    const nowTs = Date.now();
-                    safeSetStorage(`steam_matrix_cache_${appId}`, {
-                        games, statuses: allUserStatuses, logs: activityLogs, labels: statusLabels, rates: exchangeRates, timestamp: nowTs
-                    });
-                    setCacheTimestamp(nowTs);
-                }, 10000);
-                return () => clearTimeout(timer);
-            }, [games, allUserStatuses, activityLogs, statusLabels, exchangeRates, isLoadingGames, isUsingCache]);
-
-            // --- Firebase 初始化 ---
-            useEffect(() => {
-                if (!auth) return;
-                const initAuth = async () => {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            try { await auth.signInWithCustomToken(__initial_auth_token); } catch { await auth.signInAnonymously(); }
-                        } else { await auth.signInAnonymously(); }
-                    } catch (err) { console.error("Auth Fail", err); }
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(u => { if (u) setUser(u); });
-                return () => unsubscribe();
-            }, []);
-
-            useEffect(() => {
-                if (!isClient || !user || !db || isUsingCache) return;
-                let unsub = [];
-                const handleError = (err) => { if (err.code === 'resource-exhausted') setIsQuotaExceeded(true); };
-                unsub.push(db.collection(paths.games).onSnapshot(snap => {
-                    const list = []; snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-                    setGames(list); setIsLoadingGames(false);
-                }, handleError));
-                unsub.push(db.collection(paths.statuses).onSnapshot(snap => {
-                    const list = []; snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-                    setAllUserStatuses(list);
-                }, handleError));
-                unsub.push(db.collection(paths.logs).orderBy('timestamp', 'desc').limit(15).onSnapshot(snap => {
-                    const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
-                    setActivityLogs(logs); setIsLoadingLogs(false);
-                }, handleError));
-                unsub.push(db.collection(paths.presence).onSnapshot(snap => {
-                    const list = []; const now = Date.now();
-                    snap.forEach(doc => { const d = doc.data(); if (d.lastSeen && (now - d.lastSeen.toMillis() < 300000)) list.push(d); });
-                    setOnlineUsers(list);
-                }, handleError));
-                unsub.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists) setStatusLabels(doc.data().list); }, handleError));
-                unsub.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); }, handleError));
-                return () => unsub.forEach(u => u());
-            }, [user, isUsingCache, paths]);
-
-            const handleForceRefresh = () => { localStorage.removeItem(`steam_matrix_cache_${appId}`); window.location.reload(); };
-
-            // --- 重要：修正順序以防止 ReferenceError ---
-            
+            // --- 重要：修正 Memo 順序防止 ReferenceError ---
             const nameColorMap = useMemo(() => {
                 const map = {};
                 allUserStatuses.forEach(s => { if (s.userColor) map[s.userName] = s.userColor; });
@@ -518,10 +345,7 @@
 
             const hierarchy = useMemo(() => {
                 let list = [...games];
-                if (searchQuery.trim()) {
-                    const q = searchQuery.toLowerCase();
-                    list = list.filter(g => (g.name || "").toLowerCase().includes(q));
-                }
+                if (searchQuery.trim()) { list = list.filter(g => (g.name || "").toLowerCase().includes(searchQuery.toLowerCase())); }
                 list.sort((a, b) => (parseInt(a.order) || 0) - (parseInt(b.order) || 0));
                 const roots = list.filter(g => !g.parentId);
                 const children = {};
@@ -529,52 +353,137 @@
                 return { roots, children };
             }, [games, searchQuery]);
 
-            // --- 操作 Handlers ---
+            // --- 導出與導入邏輯 ---
+            const handleExportData = useCallback(() => {
+                const backup = { version: "7.1", games, statuses: allUserStatuses, settings: { statusLabels, exchangeRates } };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
+                showNotify("備份導出中...");
+            }, [games, allUserStatuses, statusLabels, exchangeRates]);
+
+            const handleImportData = useCallback((e) => {
+                const file = e.target.files[0]; if (!file || !db) return;
+                const reader = new FileReader();
+                reader.onload = async (ev) => {
+                    try {
+                        const data = JSON.parse(ev.target.result);
+                        if(!confirm("導入將會清除雲端數據並覆蓋，確定繼續？")) return;
+                        showNotify("正在重置數據庫...");
+                        const gSnap = await db.collection(paths.games).get();
+                        const sSnap = await db.collection(paths.statuses).get();
+                        const deleteDoc = async (snap) => {
+                            let batch = db.batch(); let count = 0;
+                            for (const doc of snap.docs) { batch.delete(doc.ref); count++; if (count === 400) { await batch.commit(); batch = db.batch(); count = 0; } }
+                            if (count > 0) await batch.commit();
+                        };
+                        await deleteDoc(gSnap); await deleteDoc(sSnap);
+                        if (data.games) for (const g of data.games) await db.collection(paths.games).doc(g.id).set(g);
+                        if (data.statuses) for (const s of data.statuses) await db.collection(paths.statuses).doc(s.id || `${s.gameId}_${s.userId}`).set(s);
+                        localStorage.removeItem(`steam_matrix_cache_${appId}`);
+                        showNotify("導入成功，即將刷新"); window.location.reload();
+                    } catch (err) { showNotify("導入失敗：格式錯誤"); }
+                };
+                reader.readAsText(file);
+            }, [db, paths, showNotify]);
+
+            // --- 數據同步邏輯：增量更新 + 定期快取 ---
+            useEffect(() => {
+                if (!isClient || !user || !db) return;
+                const handleError = (err) => { if (err.code === 'resource-exhausted') setIsQuotaExceeded(true); };
+                
+                const unsubGames = db.collection(paths.games).onSnapshot(snap => {
+                    setGames(prev => {
+                        let next = [...prev];
+                        snap.docChanges().forEach(change => {
+                            const data = { id: change.doc.id, ...change.doc.data() };
+                            if (change.type === 'added') { if(!next.find(x=>x.id===data.id)) next.push(data); }
+                            else if (change.type === 'modified') { const idx = next.findIndex(x=>x.id===data.id); if(idx>-1) next[idx] = data; }
+                            else if (change.type === 'removed') { next = next.filter(x=>x.id!==data.id); }
+                        });
+                        return next;
+                    });
+                    setIsLoadingGames(false); setIsSyncing(false);
+                }, handleError);
+
+                const unsubStatuses = db.collection(paths.statuses).onSnapshot(snap => {
+                    setAllUserStatuses(prev => {
+                        let next = [...prev];
+                        snap.docChanges().forEach(change => {
+                            const data = { id: change.doc.id, ...change.doc.data() };
+                            if (change.type === 'added') { if(!next.find(x=>x.id===data.id)) next.push(data); }
+                            else if (change.type === 'modified') { const idx = next.findIndex(x=>x.id===data.id); if(idx>-1) next[idx] = data; }
+                            else if (change.type === 'removed') { next = next.filter(x=>x.id!==data.id); }
+                        });
+                        return next;
+                    });
+                }, handleError);
+
+                const unsubLogs = db.collection(paths.logs).orderBy('timestamp', 'desc').limit(15).onSnapshot(snap => {
+                    const list = []; snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+                    setActivityLogs(list); setIsLoadingLogs(false);
+                }, handleError);
+
+                const unsubSettings = db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists) setStatusLabels(doc.data().list); });
+                const unsubRates = db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); });
+
+                return () => { unsubGames(); unsubStatuses(); unsubLogs(); unsubSettings(); unsubRates(); };
+            }, [user, paths]);
+
+            useEffect(() => {
+                if (isLoadingGames) return;
+                const timer = setTimeout(() => {
+                    const now = Date.now();
+                    safeSetStorage(`steam_matrix_cache_${appId}`, { games, statuses: allUserStatuses, timestamp: now });
+                    setCacheTimestamp(now);
+                }, 30000); // 30秒保存一次，降低效能負擔
+                return () => clearTimeout(timer);
+            }, [games, allUserStatuses, isLoadingGames]);
+
+            // Auth
+            useEffect(() => {
+                if (!auth) return;
+                const unsubscribe = auth.onAuthStateChanged(u => {
+                    if (u) setUser(u);
+                    else auth.signInAnonymously().catch(e => console.error(e));
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleForceRefresh = () => { localStorage.removeItem(`steam_matrix_cache_${appId}`); window.location.reload(); };
+
             const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
-                if (isUsingCache) { showNotify("⚠️ 保護模式不可操作"); return; }
                 const docId = `${gameId}_${targetUserId}`;
                 if (user && targetUserId === user.uid) { updates.userName = userName; updates.userColor = userColor; }
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, ...updates }, { merge: true });
-            }, [isUsingCache, user, userName, userColor, paths]);
+            }, [user, userName, userColor, paths]);
 
             const handleSaveGame = async (e) => {
                 if (e) e.preventDefault();
-                if (!formData.name.trim() || !user || !db || isUsingCache) return;
+                if (!formData.name.trim() || !user || !db) return;
                 try {
                     if (editingId) {
                         await db.collection(paths.games).doc(editingId).update({ ...formData, addedBy: formData.addedBy || userName });
-                        logActivity("修改數據", formData.name); 
                     } else { 
                         const nextOrder = games.length > 0 ? Math.max(...games.map(s => parseInt(s.order) || 0)) + 1 : 1;
                         await db.collection(paths.games).add({ ...formData, addedBy: formData.addedBy || userName, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
-                        logActivity("錄入", formData.name); 
                     }
                     showNotify("成功同步"); closeModal();
                 } catch (err) { showNotify("失敗"); }
             };
 
             const handleDeleteGame = useCallback(async (game) => {
-                if(!db || !confirm(`確定刪除 ${game.name}?`) || isUsingCache) return;
+                if(!db || !confirm(`確定刪除 ${game.name}?`)) return;
                 await db.collection(paths.games).doc(game.id).delete();
                 logActivity("刪除", game.name);
-            }, [db, paths, isUsingCache]);
+            }, [db, paths]);
 
             const handleUpdateOrder = async (id, val) => {
-                if (isUsingCache) return;
-                const order = parseInt(val);
-                if (isNaN(order) || !db) return;
+                const order = parseInt(val); if (isNaN(order) || !db) return;
                 await db.collection(paths.games).doc(id).update({ order });
-                showNotify("編號更新");
             };
 
-            const closeModal = useCallback(() => { 
-                setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); 
-            }, [currencies]);
-
-            const openEditModal = useCallback((g) => { 
-                if (isUsingCache) { showNotify("⚠️ 快取模式不可編輯"); return; }
-                setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); 
-            }, [currencies, isUsingCache]);
+            const closeModal = useCallback(() => { setFormData({ name: '', addedBy: '', price: '0', currency: currencies[0], url: '', cover: null, parentId: '' }); setEditingId(null); setIsModalOpen(false); }, [currencies]);
+            const openEditModal = useCallback((g) => { setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); }, [currencies]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
@@ -582,7 +491,7 @@
                         <div className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center text-center">
                             <Icon name="alert-circle" className="w-16 h-16 text-amber-500 mb-4 animate-pulse" />
                             <h2 className="text-2xl font-black mb-2">Firebase 配額已達上限</h2>
-                            <p className="text-slate-500 max-w-sm">流量過大或免費額度已用完，請稍候再試。</p>
+                            <p className="text-slate-500 max-w-sm">流量過大，請稍候再試。</p>
                             <button onClick={()=>window.location.reload()} className="mt-8 px-8 py-3 bg-indigo-600 rounded-full font-black">重新連接</button>
                         </div>
                     )}
@@ -593,7 +502,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v6.8</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v7.1</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -604,21 +513,13 @@
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <Icon name="database" className="w-4 h-4 text-cyan-500" /> 
                                         實時操作日誌
-                                        {cacheTimestamp && (
-                                            <span className={`px-2 py-0.5 rounded text-[10px] ${isUsingCache ? 'bg-amber-900/50 text-amber-400 border border-amber-500/20' : 'bg-green-900/50 text-green-400 border border-green-500/20'}`}>
-                                                保存時間: {formatDate(cacheTimestamp)} {isUsingCache ? '(保護中)' : ''}
-                                            </span>
-                                        )}
-                                        {cacheTimestamp && (
-                                            <span className="px-2 py-0.5 rounded text-[10px] bg-blue-900/50 text-blue-400 border border-blue-500/20">
-                                                下一次連線: {formatDate(cacheTimestamp + 3600000)}
-                                            </span>
-                                        )}
+                                        {cacheTimestamp && <span className={`px-2 py-0.5 rounded text-[10px] bg-indigo-900/50 text-indigo-400 border border-indigo-500/20`}>保存時間: {formatDate(cacheTimestamp)}</span>}
+                                        <span className={`px-2 py-0.5 rounded text-[10px] ${isSyncing ? 'bg-amber-900/50 text-amber-400 animate-pulse' : 'bg-green-900/50 text-green-400'}`}>{isSyncing ? '同步中...' : '已與雲端同步'}</span>
                                     </div>
-                                    <Icon name="refresh-ccw" className="w-4 h-4 text-slate-700 hover:text-white transition-colors" title="強制刷新連線" onClick={handleForceRefresh} />
+                                    <Icon name="refresh-ccw" className="w-4 h-4 text-slate-700 hover:text-white transition-colors" onClick={handleForceRefresh} title="強制刷新"/>
                                 </div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
-                                    {isLoadingLogs && !isUsingCache ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
+                                    {isLoadingLogs ? <div className="animate-pulse italic">加載中...</div> : activityLogs.map(log => (
                                         <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMap[log.userName] }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
                                     ))}
                                 </div>
@@ -643,10 +544,10 @@
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                                     <div className="flex items-center gap-3">
                                         <span>成員統計</span>
-                                        <Icon name="download" className="w-3.5 h-3.5 hover:text-white" title="導出備份" onClick={handleExportData} />
-                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" title="導入備份" onClick={() => importInputRef.current.click()} />
-                                        <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" title="匯率設定" onClick={() => setIsRatesModalOpen(true)} />
-                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" title="標籤設定" onClick={() => setIsStatusSettingsOpen(true)} />
+                                        <Icon name="download" className="w-3.5 h-3.5 hover:text-white" onClick={handleExportData} title="導出備份" />
+                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" onClick={() => importInputRef.current.click()} title="導入備份" />
+                                        <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" onClick={() => setIsRatesModalOpen(true)} title="匯率" />
+                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} title="標籤" />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
                                 </div>
@@ -671,7 +572,7 @@
 
                         <div className="mb-24 shadow-2xl rounded overflow-hidden">
                             <div className="flex items-stretch bg-slate-900 border-x border-t border-slate-700">
-                                <button onClick={() => !isUsingCache && setIsModalOpen(true)} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest">+ 新增遊戲</button>
+                                <button onClick={() => setIsModalOpen(true)} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest">+ 新增遊戲</button>
                                 <div className="flex-grow flex items-center px-6">
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
                                     <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -684,24 +585,24 @@
                                 <table className="w-full text-left border-collapse min-w-[1500px]">
                                     <thead>
                                         <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
-                                            <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-20 text-center">編號</th>
-                                            <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
-                                            <th className="px-4 w-56 text-center">封面</th>
-                                            <th className="px-6 text-center">遊戲名稱</th>
-                                            <th className="px-6 w-32 text-center">價格</th>
-                                            <th className="px-6 w-[450px] text-center">人員狀態</th>
-                                            <th className="px-4 w-16 text-center text-amber-400">成就進度</th>
+                                            <th className="px-2 w-12"></th><th className="px-1 py-5 w-20 text-center">編號</th>
+                                            <th className="px-4 w-28 text-center text-indigo-400">提起人</th><th className="px-4 w-56 text-center">封面</th>
+                                            <th className="px-6 text-center">遊戲名稱</th><th className="px-6 w-32 text-center">價格</th>
+                                            <th className="px-6 w-[450px] text-center">人員狀態</th><th className="px-4 w-16 text-center text-amber-400">成就進度</th>
                                             <th className="px-4 w-16 text-center">操作</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-sm">
-                                        {isLoadingGames && !isUsingCache ? (<tr><td colSpan="9" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING...</td></tr>) : hierarchy.roots.map((g, i) => (
-                                            <GameRow key={g.id} g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
-                                                statusOptions={statusLabels.map(o => ({id: o.id, label: o.label}))} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
-                                                personnel={gamePersonnelMap[g.id] || []} nameColorMap={nameColorMap} onToggleGroup={(id) => setExpandedGroups(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; })} onOpenEdit={openEditModal}
-                                                onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} rates={exchangeRates} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setEditingId(null); setIsModalOpen(true); }} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} 
-                                                onDrop={async (tidx, tpid) => { if(draggedId && draggedParentId === tpid && !isUsingCache) { const sibs = games.filter(x => (x.parentId||"") === tpid).sort((a,b)=>(a.order||0)-(b.order||0)); const list = [...sibs]; const [removed] = list.splice(draggedIdx, 1); list.splice(tidx, 0, removed); const b = db.batch(); list.forEach((it, idx) => b.update(db.collection(paths.games).doc(it.id), {order: idx+1})); await b.commit(); setDraggedId(null); } }} />
+                                        {isLoadingGames && games.length === 0 ? (<tr><td colSpan="9" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCHRONIZING...</td></tr>) : hierarchy.roots.map((g, i) => (
+                                            <React.Fragment key={g.id}>
+                                                <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} nameColorMap={nameColorMap} statusOptions={statusLabels}
+                                                    onToggleGroup={(id) => setExpandedGroups(prev => { const n = new Set(prev); if(n.has(id)) n.delete(id); else n.add(id); return n; })} onOpenEdit={openEditModal}
+                                                    personnel={gamePersonnelMap[g.id] || []} onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} onAddDLC={(id) => { setFormData({...formData, parentId: id, price: '0'}); setIsModalOpen(true); }} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} 
+                                                    onDrop={async (tidx, tpid) => { if(draggedId && draggedParentId === tpid) { const sibs = games.filter(x => (x.parentId||"") === tpid).sort((a,b)=>(a.order||0)-(b.order||0)); const list = [...sibs]; const [removed] = list.splice(draggedIdx, 1); list.splice(tidx, 0, removed); const b = db.batch(); list.forEach((it, idx) => b.update(db.collection(paths.games).doc(it.id), {order: idx+1})); await b.commit(); setDraggedId(null); } }} />
+                                                {expandedGroups.has(g.id) && hierarchy.children[g.id]?.map((child, cIdx) => (
+                                                    <GameRow key={child.id} g={child} index={cIdx} isChild={true} isEditLocked={isEditLocked} draggedId={draggedId} personnel={gamePersonnelMap[child.id] || []} nameColorMap={nameColorMap} statusOptions={statusLabels} onOpenEdit={openEditModal} onStartDrag={(id, idx, pid) => {setDraggedId(id); setDraggedIdx(idx); setDraggedParentId(pid);}} onUpdateOrder={handleUpdateOrder} onStatusUpdate={handleStatusUpdate} onDelete={handleDeleteGame} onOpenAchievementEdit={(game, person) => setAchievementEdit({ gameId: game.id, userId: person.userId, completed: (person.achCompleted || 0).toString(), total: (person.achTotal || 0).toString(), name: game.name, memberName: person.userName })} />
+                                                ))}
+                                            </React.Fragment>
                                         ))}
                                     </tbody>
                                 </table>
@@ -717,7 +618,7 @@
                                 <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">名稱</label><input autoFocus required className="modal-input-base text-white" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                                 <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">提起人</label><input className="modal-input-base text-white" value={formData.addedBy} placeholder={userName} onChange={e => setFormData({...formData, addedBy: e.target.value})} /></div>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">幣種</label><select className="modal-input-base text-white appearance-none" value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}</select></div>
+                                    <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">幣種</label><select className="modal-input-base text-white" value={formData.currency} onChange={e => setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}</select></div>
                                     <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">定價</label><input type="number" className="modal-input-base text-white" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} /></div>
                                 </div>
                                 <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">商店連結</label><input className="modal-input-base text-white" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} /></div>
@@ -761,7 +662,6 @@
                                     <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">總數</label><input type="number" className="modal-input-base text-white text-center text-xl" value={achievementEdit.total} onChange={e => setAchievementEdit({...achievementEdit, total: e.target.value})} /></div>
                                 </div>
                                 <div className="flex gap-2 mt-8"><button onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })} className="flex-1 py-3 bg-slate-900 rounded font-black text-xs">放棄</button><button onClick={async () => {
-                                    if (isUsingCache) return;
                                     const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                                     await db.collection(paths.statuses).doc(docId).update({ achTotal: parseInt(achievementEdit.total) || 0, achCompleted: parseInt(achievementEdit.completed) || 0 });
                                     showNotify("成就數據已同步"); setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
@@ -783,7 +683,6 @@
                                     ))}
                                 </div>
                                 <div className="flex gap-4 mt-8"><button onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-2 bg-slate-900 rounded">關閉</button><button onClick={async () => {
-                                    if (isUsingCache) return;
                                     await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
                                     setIsStatusSettingsOpen(false); showNotify("標籤已儲存");
                                 }} className="flex-1 py-2 bg-cyan-600 text-black font-black rounded">儲存標籤</button></div>
@@ -801,7 +700,6 @@
                                     <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = INR₹</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white text-center font-black" value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} /></div>
                                 </div>
                                 <div className="flex gap-4 mt-8"><button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button onClick={async () => {
-                                    if (isUsingCache) return;
                                     await db.collection(paths.settings).doc('rates').set(exchangeRates);
                                     setIsRatesModalOpen(false); showNotify("匯率已同步");
                                 }} className="flex-1 py-3 bg-green-600 text-black font-black rounded uppercase text-sm">儲存匯率</button></div>
@@ -814,7 +712,7 @@
                             <div className="bg-slate-950 border border-red-500/30 p-8 rounded max-w-sm text-center shadow-2xl">
                                 <Icon name="alert-triangle" className="w-12 h-12 text-red-500 mb-4 mx-auto" />
                                 <h3 className="text-lg font-black mb-2 text-white">確認重新排列？</h3>
-                                <p className="text-xs text-slate-400 mb-6 leading-relaxed">這將會根據目前的順序將所有編號由 1 開始重新打序，操作無法撤銷。</p>
+                                <p className="text-xs text-slate-400 mb-6 leading-relaxed">這將整理所有編號，操作無法撤銷。</p>
                                 <div className="flex gap-3"><button onClick={() => setShowNormalizeConfirm(false)} className="flex-1 py-2 bg-slate-900 rounded font-black text-xs">取消</button><button onClick={handleNormalizeOrders} className="flex-1 py-2 bg-red-600 text-white rounded font-black text-xs">確認執行</button></div>
                             </div>
                         </div>
