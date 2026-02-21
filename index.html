@@ -421,14 +421,11 @@
             ]);
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
-            
-            // 流量與配額控制
             const [isPageVisible, setIsPageVisible] = useState(true);
-            const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
-            const [isApiDisabled, setIsApiDisabled] = useState(false);
-
             const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
             const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
+            const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+            const [isApiDisabled, setIsApiDisabled] = useState(false);
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -517,8 +514,7 @@
                         }); 
                         logActivity("修改數據", formData.name); 
                     } else { 
-                        const siblings = games.filter(g => (g.parentId || "") === (formData.parentId || ""));
-                        const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
+                        const nextOrder = games.filter(g => !g.parentId).length > 0 ? Math.max(...games.filter(g => !g.parentId).map(s => parseInt(s.order) || 0)) + 1 : 1;
                         await db.collection(paths.games).add({ 
                             ...formData, addedBy: formData.addedBy || userName, order: nextOrder, achievementTotal: 0, achievementCompleted: 0,
                             createdAt: firebase.firestore.FieldValue.serverTimestamp() 
@@ -697,41 +693,25 @@
             }, []);
 
             useEffect(() => {
-                if (!isClient || !auth) return;
-                const initAuth = async () => {
-                    try { await auth.signInAnonymously(); } catch (e) {
-                        console.error("Auth Error:", e);
-                    }
-                };
-                initAuth();
-                const unsub = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsub();
-            }, []);
-
-            useEffect(() => {
-                if (!isClient) return;
                 const handleVisibility = () => setIsPageVisible(document.visibilityState === 'visible');
                 document.addEventListener('visibilitychange', handleVisibility);
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
-            // --- 核心優化：增量同步數據 + 錯誤狀態偵測 ---
+            // --- 優化點：數據監聽器不再因 Visibility 斷開，防止全量重刷造成的讀取次數飆升 ---
             useEffect(() => {
-                if (!isClient || !user || !db || !isPageVisible || isQuotaExceeded || isApiDisabled) return;
+                if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
                 
                 let activeUnsubscribers = [];
                 const handleError = (err) => {
                     console.error("Firestore Error:", err);
-                    if (err.message.includes("Cloud Firestore API has not been used")) {
-                        setIsApiDisabled(true);
-                    } else if (err.code === 'resource-exhausted') {
-                        setIsQuotaExceeded(true);
-                    } else if (err.code === 'permission-denied') {
-                        showNotify("⚠️ 權限不足，請檢查 Firebase 安全規則");
-                    }
+                    if (err.message.includes("Cloud Firestore API has not been used")) setIsApiDisabled(true);
+                    else if (err.code === 'resource-exhausted') setIsQuotaExceeded(true);
+                    else if (err.code === 'permission-denied') showNotify("⚠️ 權限不足");
                 };
 
                 const subscribe = () => {
+                    // 遊戲數據精確增量更新
                     activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
                         setGames(prev => {
                             let next = [...prev];
@@ -784,39 +764,62 @@
 
                 subscribe();
                 return () => activeUnsubscribers.forEach(unsub => unsub());
-            }, [user, paths, isPageVisible, isQuotaExceeded, isApiDisabled]);
+            }, [user, paths, isQuotaExceeded, isApiDisabled]);
 
-            // 在線心跳：1 分鐘更新一次
+            // 在線心跳：僅在分頁可見時寫入
             useEffect(() => {
                 if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
                 const updatePresence = () => {
-                    if (document.visibilityState === 'hidden' || !navigator.onLine) return;
+                    if (!isPageVisible || !navigator.onLine) return;
                     db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
                 };
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 60000); 
                 return () => clearInterval(heartbeat);
-            }, [user, userName, userColor, paths, isQuotaExceeded, isApiDisabled]);
+            }, [user, userName, userColor, paths, isQuotaExceeded, isApiDisabled, isPageVisible]);
 
-            useEffect(() => { if (isClient && window.lucide) { try { window.lucide.createIcons(); } catch (e) {} } }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, allMembersStats, achievementEdit, showNormalizeConfirm, isPageVisible, isRatesModalOpen, isApiDisabled]);
+            // --- 圖片貼上監聽 ---
+            useEffect(() => {
+                if (!isModalOpen) return;
+                const handlePaste = async (event) => {
+                    const items = event.clipboardData?.items;
+                    const files = event.clipboardData?.files;
+                    let imageBlob = null;
+                    if (items) { for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf("image") !== -1) { imageBlob = items[i].getAsFile(); break; } } }
+                    if (!imageBlob && files && files.length > 0) { for (let i = 0; i < files.length; i++) { if (files[i].type.indexOf("image") !== -1) { imageBlob = files[i]; break; } } }
+                    if (imageBlob) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            try {
+                                const compressed = await compressImage(e.target.result);
+                                setFormData(prev => ({ ...prev, cover: compressed }));
+                                showNotify("封面已貼上");
+                            } catch (err) { showNotify("圖片處理失敗"); }
+                        };
+                        reader.readAsDataURL(imageBlob);
+                    }
+                };
+                document.addEventListener('paste', handlePaste);
+                return () => document.removeEventListener('paste', handlePaste);
+            }, [isModalOpen, showNotify]);
 
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
-                    {(isQuotaExceeded || !isPageVisible || isApiDisabled) && (
-                        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-cyan-400 font-black">
-                            <Icon name={isApiDisabled ? "settings" : (isQuotaExceeded ? "alert-triangle" : "zap-off")} className={`w-12 h-12 mb-4 animate-pulse ${isApiDisabled ? 'text-blue-500' : 'text-amber-500'}`} />
+                    {(isQuotaExceeded || isApiDisabled) && (
+                        <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-cyan-400 font-black text-center">
+                            <Icon name={isApiDisabled ? "settings" : "alert-triangle"} className={`w-12 h-12 mb-4 animate-pulse ${isApiDisabled ? 'text-blue-500' : 'text-amber-500'}`} />
                             <p className="text-xl tracking-widest uppercase">
-                                {isApiDisabled ? "Firebase API 尚未啟用" : (isQuotaExceeded ? "Firebase 配額已達上限" : "系統休眠中 (省流量模式)")}
+                                {isApiDisabled ? "Firebase API 尚未啟用" : "Firebase 配額已達上限"}
                             </p>
-                            <p className="text-xs text-slate-500 mt-2 text-center px-8 leading-relaxed">
-                                {isApiDisabled ? "請前往 Google Console 啟用 Firestore API 後重新整理。" : (isQuotaExceeded ? "請等待配額重置後重整頁面。" : "請點擊頁面恢復實時同步。")}
+                            <p className="text-xs text-slate-500 mt-2 px-8 leading-relaxed max-w-md">
+                                {isApiDisabled ? "請前往 Google Console 啟用 Firestore API 後重新整理。" : "請等待 24 小時配額重置或檢查專案限制。"}
                             </p>
                             {isApiDisabled && (
-                                <a href={`https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=${firebaseConfig.projectId}`} target="_blank" className="mt-6 px-6 py-2 bg-blue-600 rounded text-xs text-white">點此前往啟用 API</a>
+                                <a href={`https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=${firebaseConfig.projectId}`} target="_blank" className="mt-6 px-6 py-2 bg-blue-600 rounded text-xs text-white uppercase font-black tracking-widest">前往啟用 API</a>
                             )}
-                            {!isApiDisabled && (isQuotaExceeded || !isPageVisible) && (
-                                <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 border border-white/10 rounded text-xs">手動重新連接</button>
-                            )}
+                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 border border-white/10 rounded text-xs uppercase font-black tracking-widest">重新連接</button>
                         </div>
                     )}
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -825,7 +828,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.3</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -887,9 +890,9 @@
                                 <div className="flex-grow flex items-center px-6 relative">
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
                                     <div className="flex-grow flex items-center gap-4">
-                                        <input type="text" placeholder="搜尋..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                        <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                         {activeFilter && (
-                                            <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs">
+                                            <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs animate-pulse">
                                                 <span className="font-black text-cyan-400">正在篩選: {activeFilter.userName}</span>
                                                 <button onClick={() => setActiveFilter(null)} className="text-white hover:text-red-500"><Icon name="x-circle" className="w-4 h-4" /></button>
                                             </div>
@@ -965,124 +968,6 @@
                                     <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = INR₹</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} /></div>
                                 </div>
                                 <div className="flex gap-4 mt-8"><button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button onClick={handleUpdateRates} className="flex-1 py-3 bg-green-600 text-black font-black rounded shadow-lg uppercase text-sm">儲存同步</button></div>
-                            </div>
-                        </div>
-                    )}
-
-                    {showNormalizeConfirm && (
-                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xs p-6 rounded shadow-2xl text-center">
-                                <h4 className="text-cyan-400 font-black mb-2 uppercase tracking-widest">編號重新校正</h4>
-                                <p className="text-xs text-slate-400 mb-6 font-bold leading-relaxed px-2">確定校正所有遊戲編號嗎？</p>
-                                <div className="flex gap-3">
-                                    <button onClick={() => setShowNormalizeConfirm(false)} className="flex-1 py-2 bg-slate-900 text-[11px] font-black rounded border border-white/5 uppercase">取消</button>
-                                    <button onClick={handleNormalizeOrders} className="flex-1 py-2 bg-cyan-600 text-black text-[11px] font-black rounded shadow-lg uppercase">執行</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {achievementEdit.gameId && (
-                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}>
-                            <div className="bg-[#0b0e14] border border-amber-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center" onClick={(e) => e.stopPropagation()}>
-                                <div className="absolute top-0 left-0 w-full h-1 bg-amber-500"></div>
-                                <h3 className="text-xl font-black mb-1 text-amber-400 italic underline decoration-amber-500/30 decoration-4">成就數據同步</h3>
-                                <p className="text-[10px] text-slate-500 mb-6 font-bold truncate opacity-60 uppercase">{achievementEdit.name} - [{achievementEdit.memberName}]</p>
-                                <div className="grid grid-cols-2 gap-4 mb-8 text-center">
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">完成數</label>
-                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-cyan-400 font-black text-2xl outline-none focus:border-cyan-500/50 transition-all text-center"
-                                            value={achievementEdit.completed === '0' || achievementEdit.completed === 0 ? '' : achievementEdit.completed}
-                                            onChange={e => setAchievementEdit({...achievementEdit, completed: e.target.value})} />
-                                    </div>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">總成就數</label>
-                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-white font-black text-2xl outline-none focus:border-slate-600 transition-all text-center"
-                                            value={achievementEdit.total === '0' || achievementEdit.total === 0 ? '' : achievementEdit.total}
-                                            onChange={e => setAchievementEdit({...achievementEdit, total: e.target.value})} />
-                                    </div>
-                                </div>
-                                <div className="flex gap-4">
-                                    <button onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })} className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase">放棄</button>
-                                    <button onClick={handleUpdateAchievements} className="flex-1 py-3 bg-amber-600 text-black text-[12px] font-black rounded shadow-lg uppercase">確認修改</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {isStatusSettingsOpen && (
-                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
-                                <h3 className="text-2xl font-black mb-6 italic text-cyan-400 uppercase tracking-widest">狀態分組與顏色設定</h3>
-                                <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2 mb-6">
-                                    {statusLabels.map((item, index) => (
-                                        <div key={item.id} className="flex items-center gap-3 bg-black/40 p-3 rounded border border-white/5 group">
-                                            <div className="flex flex-col items-center gap-1 shrink-0">
-                                                <div className="text-[9px] font-black text-slate-600 uppercase">顏色</div>
-                                                <input type="color" className="w-10 h-10 bg-transparent cursor-pointer rounded" value={item.color}
-                                                    onChange={e => { const newList = [...statusLabels]; newList[index].color = e.target.value; setStatusLabels(newList); }} />
-                                            </div>
-                                            <div className="flex-grow flex flex-col gap-1">
-                                                <div className="text-[9px] font-black text-slate-600 uppercase">標籤名稱</div>
-                                                <input className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold" style={{ color: item.color }} value={item.label}
-                                                    onChange={e => { const newList = [...statusLabels]; newList[index].label = e.target.value; setStatusLabels(newList); }} />
-                                            </div>
-                                            <button onClick={() => { if(statusLabels.length > 1) setStatusLabels(statusLabels.filter(l => l.id !== item.id)); }} className="text-slate-600 hover:text-red-500 transition-colors pt-4"><Icon name="trash-2" className="w-6 h-6" /></button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <button onClick={() => setStatusLabels([...statusLabels, { id: `status_${Date.now()}`, label: '新分組', color: '#ffffff' }])} className="w-full py-4 mb-8 border border-dashed border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/5 font-black rounded transition-all uppercase">+ 新增狀態分組</button>
-                                <div className="flex gap-4">
-                                    <button onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-4 bg-slate-900 font-black rounded uppercase">取消</button>
-                                    <button onClick={handleUpdateLabels} className="flex-1 py-4 bg-cyan-600 text-black font-black rounded uppercase">儲存同步</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {isModalOpen && (
-                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
-                            <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-2xl rounded-sm">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-indigo-600"></div>
-                                <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10"><Icon name="x" className="w-5 h-5" /></button>
-                                <div className="p-6 md:p-8">
-                                    <div className="mb-6 -ml-2 flex items-baseline gap-4"><h3 className="text-2xl font-black italic tracking-tighter underline decoration-cyan-400/30 decoration-4"><span>{editingId ? '修改' : '錄入'}</span><span className="text-cyan-400 ml-2">{formData.parentId ? 'DLC 擴充' : '數據庫'}</span></h3><div className="h-0.5 flex-grow bg-white/5"></div></div>
-                                    <form onSubmit={handleSaveGame} className="space-y-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                                            <div className="md:col-span-4 flex flex-col items-center justify-start">
-                                                <div onClick={() => fileInputRef.current.click()} className="w-full max-w-[120px] aspect-[3/4.2] bg-black border border-slate-800 rounded flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group hover:border-cyan-400 transition-all shadow-xl">
-                                                    {formData.cover ? <img src={formData.cover} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500"><Icon name="camera" className="w-6 h-6" /><span className="text-[9px] font-black uppercase text-center px-2">貼上封面<br/>(CTRL+V)</span></div>}
-                                                </div>
-                                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ if(e.target.files[0]) { const c = await compressImage(URL.createObjectURL(e.target.files[0])); setFormData(p=>({...p, cover: c})); } }} />
-                                            </div>
-                                            <div className="md:col-span-8 space-y-3">
-                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400">提起人</label><select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}>
-                                                    <option value="">選擇人員...</option>
-                                                    {tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}
-                                                </select></div>
-                                                <div className="modal-field-container items-start"><label className="text-[12px] font-black text-indigo-400 mt-2.5">遊戲名稱</label><textarea required rows="2" placeholder="輸入名稱..." className="modal-input-base w-full text-lg font-black resize-none leading-snug" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} /></div>
-                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400">商店網址</label><input className="modal-input-base w-full text-[10px] font-mono text-cyan-400" placeholder="https://store.steampowered.com/..." value={formData.url} onChange={e=>setFormData({...formData, url: e.target.value})} /></div>
-                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400">價格設定</label><div className="flex w-fit items-stretch rounded bg-black/40 border-b-2 border-slate-800"><select className="bg-transparent font-black text-indigo-400 outline-none p-2 text-sm appearance-none" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c} className="bg-[#0b0e14]">{c}</option>)}</select><input type="number" placeholder="0" className="bg-transparent p-2 text-xl font-black outline-none text-white w-28" value={formData.price === '0' || formData.price === 0 ? '' : formData.price} onChange={e=>setFormData({...formData, price: e.target.value})} /></div></div>
-                                            </div>
-                                        </div>
-                                        <div className="pt-4 flex gap-4"><button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase">放棄更改</button><button type="submit" className="flex-[2] py-3 bg-cyan-600 text-black text-[12px] font-black rounded shadow-lg uppercase">確認同步至矩陣庫</button></div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {newPersonnelInput.gameId && (
-                        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-                            <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
-                                <h4 className="text-indigo-400 font-black mb-4 uppercase tracking-widest">添加遊戲人員</h4>
-                                <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none font-black" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇人員 -</option>{tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 手動輸入 -</option></select>
-                                {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
-                                <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black rounded uppercase">取消</button><button onClick={async () => {
-                                    const n = newPersonnelInput.name.trim(); if(!n || n === "_manual_") return;
-                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: statusLabels[0].id, purchasePrice: '0', purchaseCurrency: 'HK$', achTotal: 0, achCompleted: 0 });
-                                    setNewPersonnelInput({ gameId: null, name: '' });
-                                }} className="flex-1 py-2 bg-indigo-600 text-xs font-black rounded uppercase">確認添加</button></div>
                             </div>
                         </div>
                     )}
