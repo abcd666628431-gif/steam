@@ -119,7 +119,6 @@
         const isClient = typeof window !== 'undefined';
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'steam-stats-v5';
 
-        // --- 您指定的 Firebase 配置 ---
         const firebaseConfig = {
           apiKey: "AIzaSyC5rgKWIEkf2zoshxp7dUSKPx_50oTcvuw",
           authDomain: "steam4-f9cd0.firebaseapp.com",
@@ -133,7 +132,6 @@
         const db = isClient ? firebase.firestore() : null;
         const auth = isClient ? firebase.auth() : null;
 
-        // --- 工具函數 ---
         const formatDate = (ts) => { 
             if (!ts) return "LIVE"; 
             const date = typeof ts === 'number' ? new Date(ts) : (typeof ts.toMillis === 'function' ? new Date(ts.toMillis()) : new Date(ts)); 
@@ -400,8 +398,6 @@
             const [isPageVisible, setIsPageVisible] = useState(true);
             const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
             const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
-            
-            // --- 快取機制核心狀態 ---
             const [isUsingCache, setIsUsingCache] = useState(false);
             const [cacheTimestamp, setCacheTimestamp] = useState(null);
             const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
@@ -423,10 +419,9 @@
                 }
             }, [userName, user, paths, isUsingCache]);
 
-            // --- 導出與導入邏輯 (還原定義) ---
             const handleExportData = useCallback(() => {
                 const backup = { 
-                    version: "6.5", 
+                    version: "6.6", 
                     games, 
                     statuses: allUserStatuses, 
                     settings: { statusLabels, exchangeRates } 
@@ -439,6 +434,19 @@
                 showNotify("備份文件已生成");
             }, [games, allUserStatuses, statusLabels, exchangeRates]);
 
+            // --- 修復導入還原邏輯：加入遞歸 Timestamp 轉換器 ---
+            const restoreTimestamps = (obj) => {
+                if (obj && typeof obj === 'object') {
+                    if (obj.seconds !== undefined && obj.nanoseconds !== undefined) {
+                        return new firebase.firestore.Timestamp(obj.seconds, obj.nanoseconds);
+                    }
+                    for (const key in obj) {
+                        obj[key] = restoreTimestamps(obj[key]);
+                    }
+                }
+                return obj;
+            };
+
             const handleImportData = useCallback((e) => {
                 const file = e.target.files[0]; 
                 if (!file || !db) return;
@@ -446,48 +454,70 @@
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        if(!confirm("導入將會清除當前雲端數據，確定繼續？")) return;
+                        if(!confirm("導入將會永久清除當前雲端所有數據並覆蓋，確定繼續？")) return;
                         
-                        showNotify("正在重置並導入數據...");
+                        showNotify("正在重置數據庫並上傳備份...");
                         
-                        // 清除舊數據
+                        // 1. 分段清除雲端舊數據 (避免 500 限制)
                         const gSnap = await db.collection(paths.games).get();
                         const sSnap = await db.collection(paths.statuses).get();
-                        const batch = db.batch();
-                        gSnap.forEach(doc => batch.delete(doc.ref));
-                        sSnap.forEach(doc => batch.delete(doc.ref));
-                        await batch.commit();
+                        
+                        const deleteDoc = async (snap) => {
+                            let count = 0;
+                            let batch = db.batch();
+                            for (const doc of snap.docs) {
+                                batch.delete(doc.ref);
+                                count++;
+                                if (count === 400) {
+                                    await batch.commit();
+                                    batch = db.batch();
+                                    count = 0;
+                                }
+                            }
+                            if (count > 0) await batch.commit();
+                        };
 
-                        // 寫入新數據
+                        await deleteDoc(gSnap);
+                        await deleteDoc(sSnap);
+
+                        // 2. 還原時間戳並逐個寫入
                         if (data.games) {
                             for (const g of data.games) {
                                 const { id, ...gd } = g;
-                                await db.collection(paths.games).doc(id).set(gd);
+                                const restoredData = restoreTimestamps(gd);
+                                await db.collection(paths.games).doc(id).set(restoredData);
                             }
                         }
                         if (data.statuses) {
                             for (const s of data.statuses) {
                                 const { id, ...sd } = s;
-                                await db.collection(paths.statuses).doc(id).set(sd);
+                                const restoredData = restoreTimestamps(sd);
+                                await db.collection(paths.statuses).doc(id || `${sd.gameId}_${sd.userId}`).set(restoredData);
                             }
                         }
                         
-                        showNotify("還原成功，請手動刷新頁面");
+                        // 3. 上傳設定
+                        if (data.settings) {
+                            if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
+                            if (data.settings.exchangeRates) await db.collection(paths.settings).doc('rates').set(data.settings.exchangeRates);
+                        }
+                        
                         localStorage.removeItem(`steam_matrix_cache_${appId}`);
-                        setTimeout(() => window.location.reload(), 2000);
-                    } catch (err) { showNotify("還原格式錯誤"); }
+                        showNotify("導入成功，即將重啟系統");
+                        setTimeout(() => window.location.reload(), 1500);
+                    } catch (err) { 
+                        console.error(err);
+                        showNotify("導入失敗：備份格式錯誤或權限不足"); 
+                    }
                 };
                 reader.readAsText(file);
             }, [db, paths, showNotify]);
 
-            // --- 流量救星核心：1 小時快取優先邏輯 ---
             useEffect(() => {
                 const CACHE_KEY = `steam_matrix_cache_${appId}`;
                 const cacheData = safeGetStorage(CACHE_KEY, null);
                 const ONE_HOUR = 3600000;
-
                 if (cacheData && cacheData.timestamp && (Date.now() - cacheData.timestamp < ONE_HOUR)) {
-                    console.log("偵測到有效快取，啟動流量保護模式");
                     setGames(cacheData.games || []);
                     setAllUserStatuses(cacheData.statuses || []);
                     setActivityLogs(cacheData.logs || []);
@@ -497,12 +527,9 @@
                     setIsUsingCache(true);
                     setIsLoadingGames(false); 
                     setIsLoadingLogs(false);
-                } else {
-                    setIsUsingCache(false);
-                }
+                } else { setIsUsingCache(false); }
             }, [paths]);
 
-            // --- 自動保存快取機制 ---
             useEffect(() => {
                 if (isLoadingGames || isUsingCache) return;
                 const timer = setTimeout(() => {
@@ -516,7 +543,6 @@
                 return () => clearTimeout(timer);
             }, [games, allUserStatuses, activityLogs, statusLabels, exchangeRates, isLoadingGames, isUsingCache]);
 
-            // --- Firebase Auth ---
             useEffect(() => {
                 if (!auth) return;
                 const initAuth = async () => {
@@ -525,17 +551,15 @@
                             try { await auth.signInWithCustomToken(__initial_auth_token); } 
                             catch (tokenErr) { await auth.signInAnonymously(); }
                         } else { await auth.signInAnonymously(); }
-                    } catch (err) { console.error("Auth Failed", err); }
+                    } catch (err) { console.error("Auth Fail", err); }
                 };
                 initAuth();
                 const unsubscribe = auth.onAuthStateChanged(u => { if (u) setUser(u); });
                 return () => unsubscribe();
             }, []);
 
-            // --- Firestore 實時監聽 (流量救星防護罩) ---
             useEffect(() => {
                 if (!isClient || !user || !db || isUsingCache) return;
-                
                 let activeUnsubscribers = [];
                 const handleError = (err) => { if (err.code === 'resource-exhausted') setIsQuotaExceeded(true); };
 
@@ -569,7 +593,7 @@
             const handleForceRefresh = () => { localStorage.removeItem(`steam_matrix_cache_${appId}`); window.location.reload(); };
 
             const handleStatusUpdate = async (gameId, targetUserId, updates) => {
-                if (isUsingCache) { showNotify("⚠️ 保護模式中，請刷新連線雲端"); return; }
+                if (isUsingCache) { showNotify("⚠️ 保護模式不可操作"); return; }
                 const docId = `${gameId}_${targetUserId}`;
                 if (user && targetUserId === user.uid) { updates.userName = userName; updates.userColor = userColor; }
                 await db.collection(paths.statuses).doc(docId).set({ 
@@ -589,7 +613,7 @@
                         await db.collection(paths.games).add({ ...formData, addedBy: formData.addedBy || userName, order: nextOrder, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); 
                         logActivity("錄入", formData.name); 
                     }
-                    showNotify("已保存"); closeModal();
+                    showNotify("同步成功"); closeModal();
                 } catch (err) { showNotify("失敗"); }
             };
 
@@ -626,7 +650,31 @@
                 setEditingId(g.id); setFormData({ name: g.name||'', addedBy: g.addedBy||'', price: g.price||'0', currency: g.currency||currencies[0], url: g.url||'', cover: g.cover||null, parentId: g.parentId||'' }); setIsModalOpen(true); 
             }, [currencies, isUsingCache]);
 
-            // --- Memoized Data ---
+            useEffect(() => {
+                if (isClient) {
+                    setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
+                    setUserColor(safeGetStorage('steam_user_color', '#22d3ee'));
+                }
+            }, []);
+
+            useEffect(() => {
+                if (!isModalOpen) return;
+                const handlePaste = async (event) => {
+                    const item = event.clipboardData?.items[0];
+                    if (item && item.type.indexOf("image") !== -1) {
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                            const compressed = await compressImage(e.target.result);
+                            setFormData(prev => ({ ...prev, cover: compressed }));
+                            showNotify("封面貼入");
+                        };
+                        reader.readAsDataURL(item.getAsFile());
+                    }
+                };
+                document.addEventListener('paste', handlePaste);
+                return () => document.removeEventListener('paste', handlePaste);
+            }, [isModalOpen]);
+
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -669,13 +717,6 @@
                 });
             }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
-            useEffect(() => {
-                if (isClient) {
-                    setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
-                    setUserColor(safeGetStorage('steam_user_color', '#22d3ee'));
-                }
-            }, []);
-
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     {isQuotaExceeded && (
@@ -693,7 +734,7 @@
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
                             <div>
-                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v6.5</span></div>
+                                <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v6.6</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
                         </header>
@@ -743,10 +784,10 @@
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                                     <div className="flex items-center gap-3">
                                         <span>成員統計</span>
-                                        <Icon name="download" className="w-3.5 h-3.5 hover:text-white" title="導出 JSON 備份" onClick={handleExportData} />
-                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" title="導入 JSON 備份" onClick={() => importInputRef.current.click()} />
+                                        <Icon name="download" className="w-3.5 h-3.5 hover:text-white" title="導出備份" onClick={handleExportData} />
+                                        <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" title="導入備份" onClick={() => importInputRef.current.click()} />
                                         <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" title="匯率設定" onClick={() => setIsRatesModalOpen(true)} />
-                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
+                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" title="標籤設定" onClick={() => setIsStatusSettingsOpen(true)} />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
                                     </div>
                                 </div>
@@ -808,7 +849,6 @@
                         </div>
                     </div>
 
-                    {/* MODALS */}
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                             <form onSubmit={handleSaveGame} className="bg-[#0b0e14] border border-cyan-500/30 w-full max-lg p-8 rounded shadow-2xl space-y-4">
@@ -821,8 +861,8 @@
                                 </div>
                                 <div className="modal-field-container"><label className="text-xs font-black text-slate-500 uppercase">商店連結</label><input className="modal-input-base text-white" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} /></div>
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-xs font-black text-slate-500 uppercase">封面 (貼入圖片或輸入 URL)</label>
-                                    <input className="modal-input-base flex-grow text-[11px]" value={formData.cover || ''} onChange={e => setFormData({...formData, cover: e.target.value})} placeholder="Paste image here or input URL..." />
+                                    <label className="text-xs font-black text-slate-500 uppercase">封面</label>
+                                    <input className="modal-input-base flex-grow text-[11px]" value={formData.cover || ''} onChange={e => setFormData({...formData, cover: e.target.value})} placeholder="Paste or input URL..." />
                                     {formData.cover && <div className="h-32 bg-black border border-slate-800 rounded mt-2 overflow-hidden"><img src={formData.cover} className="w-full h-full object-contain" /></div>}
                                 </div>
                                 <div className="flex gap-4 mt-8 pt-4"><button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-black rounded shadow-lg uppercase text-sm">儲存同步</button></div>
@@ -834,7 +874,11 @@
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80">
                             <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-sm p-8 rounded shadow-2xl">
                                 <h3 className="text-lg font-black mb-4 text-cyan-400">添加參與成員</h3>
-                                <input autoFocus className="modal-input-base w-full text-white" value={newPersonnelInput.name} placeholder="成員名稱..." onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} onKeyDown={e => e.key === 'Enter' && handleAddPersonnel(newPersonnelInput.name)} />
+                                <input autoFocus className="modal-input-base w-full text-white" value={newPersonnelInput.name} placeholder="成員名稱..." onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} onKeyDown={e => e.key === 'Enter' && (async () => {
+                                    if (!newPersonnelInput.name.trim()) return;
+                                    await handleStatusUpdate(newPersonnelInput.gameId, crypto.randomUUID(), { userName: newPersonnelInput.name, status: 'unbought' });
+                                    setNewPersonnelInput({ gameId: null, name: '' });
+                                })()} />
                                 <div className="flex gap-2 mt-6"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-900 rounded font-black text-xs">取消</button><button onClick={async () => {
                                     if (!newPersonnelInput.name.trim()) return;
                                     await handleStatusUpdate(newPersonnelInput.gameId, crypto.randomUUID(), { userName: newPersonnelInput.name, status: 'unbought' });
