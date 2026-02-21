@@ -163,14 +163,14 @@
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Firebase 配置
+        // 已更新：最新的 Firebase 配置 (steam4-f9cd0)
         const firebaseConfig = {
-            apiKey: "AIzaSyDY10TBKZYURI9pkNMjoQUnpTd-zswoEzM",
-            authDomain: "steam3-5caef.firebaseapp.com",
-            projectId: "steam3-5caef",
-            storageBucket: "steam3-5caef.firebasestorage.app",
-            messagingSenderId: "430876652656",
-            appId: "1:430876652656:web:8845733a719e302a1730b5"
+            apiKey: "AIzaSyC5rgKWIEkf2zoshxp7dUSKPx_50oTcvuw",
+            authDomain: "steam4-f9cd0.firebaseapp.com",
+            projectId: "steam4-f9cd0",
+            storageBucket: "steam4-f9cd0.firebasestorage.app",
+            messagingSenderId: "767912053069",
+            appId: "1:767912053069:web:595c6ae50f1f2410c18f04"
         };
 
         if (isClient && !firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -237,6 +237,7 @@
             );
         });
 
+        // 換算邏輯：外幣轉港幣 (單向換算：二轉一)
         const convertToHKD = (foreignVal, foreignCcy, rates) => {
             if (!foreignVal || isNaN(foreignVal)) return foreignVal;
             const num = parseFloat(foreignVal);
@@ -259,135 +260,125 @@
             onOpenAchievementEdit
         }) => {
             const addedByColor = nameColorMap[g.addedBy] || '#818cf8';
-            
             return (
-                <React.Fragment>
-                    <tr 
-                        onDragOver={(e)=>e.preventDefault()} 
-                        onDrop={() => !isEditLocked && onDrop(index, g.parentId || "")}
-                        onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))}
-                        className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
-                        
-                        <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex flex-col items-center gap-2">
-                                {!isEditLocked && (
-                                    <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
-                                )}
-                                {!isChild && hasChildren && (
-                                    <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
-                                )}
+                <tr onDragOver={(e)=>e.preventDefault()} onDrop={() => !isEditLocked && onDrop(index, g.parentId || "")} onDoubleClick={()=>(!isEditLocked && onOpenEdit(g))} className={`hover:bg-white/[0.03] border-b border-white/5 group transition-colors ${draggedId === g.id ? 'dragging' : ''} ${isChild ? 'bg-black/20' : ''}`}>
+                    <td className="px-2 text-center" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex flex-col items-center gap-2">
+                            {!isEditLocked && (
+                                <div draggable onDragStart={() => onStartDrag(g.id, index, g.parentId || "")} className="drag-handle p-2 text-slate-700 hover:text-cyan-400"><Icon name="grip-vertical" className="w-5 h-5" /></div>
+                            )}
+                            {!isChild && hasChildren && (
+                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} className="w-5 h-5 text-cyan-500" onClick={()=>onToggleGroup(g.id)} />
+                            )}
+                        </div>
+                    </td>
+                    <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
+                        {!isChild ? (
+                            isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
+                            <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
+                        ) : null}
+                    </td>
+                    <td className="px-4 text-center">
+                        <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                        <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
+                            {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
+                        </div>
+                    </td>
+                    <td className="px-6 py-8 text-center selectable-cell">
+                        <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-2">
+                                <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
+                                {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
                             </div>
-                        </td>
-                        <td className={`px-0 py-8 text-center font-mono selectable-cell w-12 ${isChild ? 'dlc-indent text-slate-500' : ''}`} onClick={(e)=>e.stopPropagation()}>
-                            {!isChild ? (
-                                isEditLocked ? <span className="text-slate-600 group-hover:text-cyan-400 font-black text-xl block w-full text-center">{g.order || 0}</span> : 
-                                <LocalNumberInput defaultValue={g.order || 0} onConfirm={(v) => onUpdateOrder(g.id, v, g.parentId || "")} className="bg-black/50 border border-slate-800 w-9 text-center rounded outline-none py-1 mx-auto block font-black text-xl" />
-                            ) : null}
-                        </td>
-                        <td className="px-4 text-center">
-                            <span style={{ color: addedByColor }} className="font-black text-[13px] bg-black/30 px-2 py-1 border border-white/5 rounded-sm">{g.addedBy || '系統'}</span>
-                        </td>
-                        
-                        <td className="px-4 py-3">
-                            <div className="w-44 h-28 bg-black border border-slate-800 mx-auto flex items-center justify-center overflow-hidden rounded-sm group-hover:border-indigo-500 p-1">
-                                {g.cover ? <img src={g.cover} className="w-full h-full object-contain" /> : <Icon name="image" className="text-slate-900 w-8 h-8" />}
-                            </div>
-                        </td>
-                        <td className="px-6 py-8 text-center selectable-cell">
-                            <div className="flex flex-col items-center gap-1">
-                                <div className="flex items-center gap-2">
-                                    <span className={`font-black ${isChild ? 'text-lg text-slate-400' : 'text-xl'}`}>{g.name}</span>
-                                    {g.url && <a href={g.url} target="_blank" onClick={(e)=>e.stopPropagation()} className="text-slate-600 hover:text-white"><Icon name="link-2" className="w-4 h-4" /></a>}
+                            {!isEditLocked && (
+                                <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
+                                    {!isChild && (
+                                        <div 
+                                            className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black"
+                                            onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}}
+                                            onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}
+                                        ><Icon name="folder-plus" className="w-3 h-3" /> 放入分組</div>
+                                    )}
+                                    {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
                                 </div>
-                                {!isEditLocked && (
-                                    <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {!isChild && <button onClick={(e)=>{e.stopPropagation(); onAddDLC(g.id);}} className="text-[10px] bg-indigo-900/50 px-2 py-1 rounded text-indigo-300 border border-indigo-500/20 font-bold hover:bg-indigo-600 hover:text-white transition-all">+ DLC / 擴充</button>}
-                                        {!isChild && (
-                                            <div 
-                                                className="text-[10px] px-2 py-1 rounded border border-cyan-500/20 bg-cyan-900/20 text-cyan-400 font-bold cursor-pointer hover:bg-cyan-500 hover:text-black"
-                                                onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}}
-                                                onDrop={(e)=>{e.preventDefault(); e.stopPropagation(); onNest(g.id); }}
-                                            ><Icon name="folder-plus" className="w-3 h-3" /> 放入分組</div>
-                                        )}
-                                        {isChild && <button onClick={(e)=>{e.stopPropagation(); onUnnest(g.id);}} className="text-[10px] bg-red-900/30 px-2 py-1 rounded text-red-400 font-bold">移出分組</button>}
-                                    </div>
-                                )}
-                            </div>
-                        </td>
-                        <td className="px-6 text-center font-black text-2xl">
-                            <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
-                        </td>
-                        <td className="px-1" onClick={(e)=>e.stopPropagation()}>
-                            <div className="flex items-center justify-center min-h-[40px] w-full">
-                                <div className="flex flex-col gap-1">
-                                    {personnel.map(p => (
-                                        <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] shadow-sm text-[14px] h-9 min-w-[340px] shrink-0 text-white/90">
-                                            <span className="font-black truncate w-12 shrink-0 text-left" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
-                                            <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] shrink-0 text-[13px]">
-                                                {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                            )}
+                        </div>
+                    </td>
+                    <td className="px-6 text-center font-black text-2xl">
+                        <span className="text-xs text-white/50 mr-1">{g.currency || 'HK$'}</span>{g.price||0}
+                    </td>
+                    <td className="px-1" onClick={(e)=>e.stopPropagation()}>
+                        <div className="flex flex-col gap-1 items-center justify-center">
+                            {personnel.map(p => (
+                                <div key={p.id} className="flex items-center bg-black/40 p-0.5 pl-2 pr-2 rounded border border-white/5 gap-[5px] text-[14px] h-9 min-w-[340px] shrink-0">
+                                    <span className="font-black truncate w-12 text-left" style={{ color: nameColorMap[p.userName] }}>{p.userName}</span>
+                                    <select value={p.status} onChange={(e) => onStatusUpdate(g.id, p.userId, { status: e.target.value, userName: p.userName })} className="bg-slate-950 border border-white/10 rounded px-0.5 py-0.5 font-black w-[90px] text-[13px]">
+                                        {statusOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                                    </select>
+                                    {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
+                                        <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
+                                            <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
+                                                {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                                             </select>
-                                            {p.purchasePrice !== undefined && p.purchasePrice !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price relative">
-                                                    <select value={p.purchaseCurrency || 'HK$'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency: e.target.value, userName: p.userName })} className="bg-transparent text-[9px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice || 0} 
-                                                        onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} 
-                                                        className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" 
-                                                    />
-                                                    {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-                                            {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
-                                                <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
-                                                    <select value={p.purchaseCurrency2 || 'RMB¥'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
-                                                        {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                    </select>
-                                                    <LocalNumberInput defaultValue={p.purchasePrice2 || 0} 
-                                                        onConfirm={(v) => {
-                                                            const updates = { purchasePrice2: v, userName: p.userName };
-                                                            const hkdValue = convertToHKD(v, p.purchaseCurrency2 || 'RMB¥', rates);
-                                                            if (hkdValue !== null) updates.purchasePrice = hkdValue;
-                                                            onStatusUpdate(g.id, p.userId, updates);
-                                                        }} 
-                                                        className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" 
-                                                    />
-                                                    {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />}
-                                                </div>
-                                            ) : (
-                                                !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: 'RMB¥', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
-                                            )}
-                                            <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
+                                            <LocalNumberInput defaultValue={p.purchasePrice || 0} 
+                                                onConfirm={(v) => onStatusUpdate(g.id, p.userId, { purchasePrice: v, userName: p.userName })} 
+                                                className="bg-transparent w-12 text-cyan-300 font-bold outline-none text-center text-[13px]" 
+                                            />
+                                            {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: null, userName: p.userName })} />}
                                         </div>
-                                    ))}
-                                    {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[340px]">EMPTY MATRIX</div>}
+                                    ) : (
+                                        !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice: '0', purchaseCurrency: 'HK$', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-cyan-500 hover:border-cyan-500 font-black text-xs transition-all">+ $</button>
+                                    )}
+                                    {p.purchasePrice2 !== undefined && p.purchasePrice2 !== null ? (
+                                        <div className="flex items-center gap-[1px] bg-black/40 px-1 rounded border border-white/5 h-full shrink-0 group/price2 relative">
+                                            <select value={p.purchaseCurrency2 || 'RMB¥'} onChange={(e) => onStatusUpdate(g.id, p.userId, { purchaseCurrency2: e.target.value, userName: p.userName })} className="bg-transparent text-[11px] text-slate-500 w-9 font-bold appearance-none">
+                                                {currencies.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                            </select>
+                                            <LocalNumberInput defaultValue={p.purchasePrice2 || 0} 
+                                                onConfirm={(v) => {
+                                                    const updates = { purchasePrice2: v, userName: p.userName };
+                                                    const hkdValue = convertToHKD(v, p.purchaseCurrency2 || 'RMB¥', rates);
+                                                    if (hkdValue !== null) updates.purchasePrice = hkdValue;
+                                                    onStatusUpdate(g.id, p.userId, updates);
+                                                }} 
+                                                className="bg-transparent w-12 text-lime-400 font-bold outline-none text-center text-[13px]" 
+                                            />
+                                            {!isEditLocked && <Icon name="x" className={`w-2.5 h-2.5 text-red-500 absolute -top-1 -right-1 opacity-0 group-hover/price2:opacity-100 bg-black rounded-full`} onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: null, userName: p.userName })} />}
+                                        </div>
+                                    ) : (
+                                        !isEditLocked && <button onClick={() => onStatusUpdate(g.id, p.userId, { purchasePrice2: '0', purchaseCurrency2: 'RMB¥', userName: p.userName })} className="w-10 h-full border border-dashed border-slate-800 rounded text-slate-700 hover:text-lime-500 hover:border-lime-500 font-black text-xs transition-all">+ $</button>
+                                    )}
+                                    <Icon name="trash-2" className={`w-4.5 h-4.5 text-slate-800 hover:text-red-500 shrink-0 ml-auto transition-opacity ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} onClick={() => onRemovePersonnel(p.id, p.userName)} />
                                 </div>
-                            </div>
-                        </td>
-                        <td className="px-4 text-center">
-                            <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
-                                {personnel.map(p => (
-                                    <AchievementBar key={p.id} completed={p.achCompleted} total={p.achTotal} isEditLocked={isEditLocked} onClick={() => onOpenAchievementEdit(g, p)} />
-                                ))}
-                                {personnel.length === 0 && <div className="h-9"></div>}
-                            </div>
-                        </td>
-                        <td className="px-4 text-center">
-                            <div className="flex items-center justify-center gap-3">
-                                <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
-                                {!isEditLocked && (
-                                    <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>
-                                )}
-                            </div>
-                        </td>
-                    </tr>
-                </React.Fragment>
+                            ))}
+                            {personnel.length === 0 && <div className="text-slate-800 text-[11px] italic py-2 text-center border border-dashed border-white/5 rounded w-[340px]">EMPTY MATRIX</div>}
+                        </div>
+                    </td>
+                    <td className="px-4 text-center">
+                        <div className="flex flex-col gap-1.5 items-center w-full min-w-[200px]">
+                            {personnel.map(p => (
+                                <AchievementBar key={p.id} completed={p.achCompleted} total={p.achTotal} isEditLocked={isEditLocked} onClick={() => onOpenAchievementEdit(g, p)} />
+                            ))}
+                            {personnel.length === 0 && <div className="h-9"></div>}
+                        </div>
+                    </td>
+                    <td className="px-4 text-center">
+                        <div className="flex items-center justify-center gap-3">
+                            <button onClick={(e)=>{e.stopPropagation(); onDelete(g);}} className={`text-slate-800 hover:text-red-500 transition-all active:scale-90 ${isEditLocked ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} title="刪除遊戲"><Icon name="trash-2" className="w-5 h-5" /></button>
+                            {!isEditLocked && (
+                                <button onClick={(e) => { e.stopPropagation(); onAddPersonnel(g.id); }} className="text-slate-600 hover:text-cyan-400 transition-all active:scale-90" title="添加成員"><Icon name="user-plus" className="w-5 h-5" /></button>
+                            )}
+                        </div>
+                    </td>
+                </tr>
             );
         });
 
         function App() {
+            // 1. 狀態定義 (State)
             const [user, setUser] = useState(null);
             const [onlineUsers, setOnlineUsers] = useState([]);
             const [activityLogs, setActivityLogs] = useState([]);
@@ -413,19 +404,15 @@
             const [draggedParentId, setDraggedParentId] = useState("");
             const [activeFilter, setActiveFilter] = useState(null);
             const [isStatusSettingsOpen, setIsStatusSettingsOpen] = useState(false);
-            const [statusLabels, setStatusLabels] = useState([
-                { id: 'unbought', label: '願望清單', color: '#ffffff' },
-                { id: 'bought', label: '已購買', color: '#67e8f9' },
-                { id: 'playing', label: '遊玩中', color: '#f0abfc' },
-                { id: 'completed', label: '已完成', color: '#bef264' }
-            ]);
+            const [statusLabels, setStatusLabels] = useState([{ id: 'unbought', label: '願望清單', color: '#ffffff' }, { id: 'bought', label: '已購買', color: '#67e8f9' }, { id: 'playing', label: '遊玩中', color: '#f0abfc' }, { id: 'completed', label: '已完成', color: '#bef264' }]);
             const [showNormalizeConfirm, setShowNormalizeConfirm] = useState(false);
             const [achievementEdit, setAchievementEdit] = useState({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' });
             const [isPageVisible, setIsPageVisible] = useState(true);
-            const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
-            const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
             const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
             const [isApiDisabled, setIsApiDisabled] = useState(false);
+            const [isRatesModalOpen, setIsRatesModalOpen] = useState(false);
+            const [exchangeRates, setExchangeRates] = useState({ HKD_RMB: 0.93, HKD_RUB: 12.0, HKD_INR: 10.6 });
+            const [isLiveMode, setIsLiveMode] = useState(false);
 
             const importInputRef = useRef(null);
             const fileInputRef = useRef(null);
@@ -438,17 +425,14 @@
                 settings: `artifacts/${APP_ID}/public/data/settings`
             }), []);
 
+            // 2. 回調函數 (Callbacks)
             const showNotify = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 3000); }, []);
 
             const logActivity = useCallback((action, gameName) => { 
-                if(isClient && db && user && !isQuotaExceeded && !isApiDisabled) {
-                    db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
-                }
-            }, [userName, user, paths, isQuotaExceeded, isApiDisabled]);
+                if(isClient && db && user && isLiveMode) db.collection(paths.logs).add({ userName, action, gameName, timestamp: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{});
+            }, [userName, user, paths, isLiveMode]);
 
-            const handleToggleGroup = useCallback((id) => {
-                setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; });
-            }, []);
+            const handleToggleGroup = useCallback((id) => setExpandedGroups(p => { const n = new Set(p); if(n.has(id)) n.delete(id); else n.add(id); return n; }), []);
 
             const handleSetFilter = useCallback((name, sid) => {
                 setActiveFilter(prev => {
@@ -468,14 +452,14 @@
             }, [currencies]);
 
             const handleStatusUpdate = useCallback(async (gameId, targetUserId, updates) => {
-                if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
+                if (!isClient || !user || !db || isQuotaExceeded) return;
                 const docId = `${gameId}_${targetUserId}`;
                 if (targetUserId === user.uid) { updates.userColor = userColor; updates.userName = userName; }
                 await db.collection(paths.statuses).doc(docId).set({ gameId, userId: targetUserId, timestamp: firebase.firestore.FieldValue.serverTimestamp(), ...updates }, { merge: true });
-            }, [user, userColor, userName, paths, isQuotaExceeded, isApiDisabled]);
+            }, [user, userColor, userName, paths, isQuotaExceeded]);
 
             const handleUpdateAchievements = async () => {
-                if (!db || !achievementEdit.userId || !achievementEdit.gameId || isQuotaExceeded || isApiDisabled) return;
+                if (!db || !achievementEdit.userId || !achievementEdit.gameId || isQuotaExceeded) return;
                 const docId = `${achievementEdit.gameId}_${achievementEdit.userId}`;
                 try {
                     await db.collection(paths.statuses).doc(docId).update({ achTotal: parseInt(achievementEdit.total) || 0, achCompleted: parseInt(achievementEdit.completed) || 0 });
@@ -485,27 +469,9 @@
                 } catch (e) { showNotify("同步失敗"); }
             };
 
-            const handleUpdateLabels = useCallback(async (e) => {
-                if (e) e.preventDefault();
-                if (!db || isQuotaExceeded || isApiDisabled) return;
-                try {
-                    await db.collection(paths.settings).doc('labels').set({ list: statusLabels });
-                    setIsStatusSettingsOpen(false); showNotify("標籤設定已同步");
-                } catch (err) { showNotify("儲存失敗"); }
-            }, [statusLabels, paths, showNotify, isQuotaExceeded, isApiDisabled]);
-            
-            const handleUpdateRates = useCallback(async (e) => {
-                if (e) e.preventDefault();
-                if (!db || isQuotaExceeded || isApiDisabled) return;
-                try {
-                    await db.collection(paths.settings).doc('rates').set(exchangeRates);
-                    setIsRatesModalOpen(false); showNotify("匯率已同步");
-                } catch (err) { showNotify("匯率儲存失敗"); }
-            }, [exchangeRates, paths, showNotify, isQuotaExceeded, isApiDisabled]);
-
             const handleSaveGame = useCallback(async (e) => {
                 if (e) e.preventDefault();
-                if (!formData.name.trim() || !user || !db || isQuotaExceeded || isApiDisabled) return;
+                if (!formData.name.trim() || !user || !db || isQuotaExceeded) return;
                 try {
                     if (editingId) {
                         await db.collection(paths.games).doc(editingId).update({
@@ -514,7 +480,8 @@
                         }); 
                         logActivity("修改數據", formData.name); 
                     } else { 
-                        const nextOrder = games.filter(g => !g.parentId).length > 0 ? Math.max(...games.filter(g => !g.parentId).map(s => parseInt(s.order) || 0)) + 1 : 1;
+                        const siblings = games.filter(g => !g.parentId);
+                        const nextOrder = siblings.length > 0 ? Math.max(...siblings.map(s => parseInt(s.order) || 0)) + 1 : 1;
                         await db.collection(paths.games).add({ 
                             ...formData, addedBy: formData.addedBy || userName, order: nextOrder, achievementTotal: 0, achievementCompleted: 0,
                             createdAt: firebase.firestore.FieldValue.serverTimestamp() 
@@ -523,11 +490,11 @@
                     }
                     showNotify("同步成功"); closeModal();
                 } catch (err) { showNotify("同步失敗"); }
-            }, [formData, user, editingId, games, userName, logActivity, paths, closeModal, showNotify, isQuotaExceeded, isApiDisabled]);
+            }, [formData, user, editingId, games, userName, logActivity, paths, isQuotaExceeded]);
 
             const handleUpdateOrder = async (id, val, pId = "") => {
                 const order = parseInt(val);
-                if (isNaN(order) || !db || isQuotaExceeded || isApiDisabled) return;
+                if (isNaN(order) || !db || isQuotaExceeded) return;
                 try {
                     const batch = db.batch();
                     const siblings = games.filter(g => (g.parentId || "") === pId).sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -538,12 +505,11 @@
                     });
                     batch.update(db.collection(paths.games).doc(id), { order });
                     await batch.commit();
-                    showNotify("編號已順延");
-                } catch (e) { showNotify("更新失敗"); }
+                } catch (e) {}
             };
 
             const handleNormalizeOrders = async () => {
-                if (!db || isQuotaExceeded || isApiDisabled) return;
+                if (!db || isQuotaExceeded) return;
                 try {
                     const batch = db.batch();
                     const sortedRoots = [...games.filter(g => !g.parentId)].sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -554,9 +520,9 @@
                         sortedChildren.forEach((child, idx) => batch.update(db.collection(paths.games).doc(child.id), { order: idx + 1 }));
                     });
                     await batch.commit();
-                    showNotify("編號校正完畢");
                     setShowNormalizeConfirm(false);
-                } catch (e) { showNotify("校正失敗"); }
+                    showNotify("編號校正完畢");
+                } catch (e) {}
             };
 
             const handleStartDrag = (id, idx, pId) => {
@@ -564,7 +530,7 @@
             };
 
             const handleDrop = async (targetIdx, targetParentId) => {
-                if (!draggedId || !db || draggedParentId !== targetParentId || isQuotaExceeded || isApiDisabled) return;
+                if (!draggedId || !db || draggedParentId !== targetParentId || isQuotaExceeded) return;
                 const batch = db.batch();
                 const siblings = games.filter(g => (g.parentId || "") === targetParentId).sort((a, b) => (a.order || 0) - (b.order || 0));
                 const newOrderList = [...siblings];
@@ -576,27 +542,25 @@
             };
 
             const handleDeleteGame = useCallback(async (game) => {
-                if(!db || !confirm(`確定刪除 ${game.name}?`) || isQuotaExceeded || isApiDisabled) return;
+                if(!db || !confirm(`確定刪除 ${game.name}?`) || isQuotaExceeded) return;
                 try {
                     await db.collection(paths.games).doc(game.id).delete();
                     logActivity("刪除", game.name);
-                    showNotify("已刪除");
-                } catch (e) { showNotify("刪除失敗"); }
-            }, [db, paths, logActivity, showNotify, isQuotaExceeded, isApiDisabled]);
+                } catch (e) {}
+            }, [db, paths, logActivity, isQuotaExceeded]);
 
             const handleExportData = useCallback(() => {
-                const backup = { version: "6.6", games, statuses: allUserStatuses, settings: { statusLabels, currencies } };
+                const backup = { version: "6.6", games, statuses: allUserStatuses };
                 const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
                 const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `steam_backup_${Date.now()}.json`; a.click();
-            }, [games, allUserStatuses, statusLabels, currencies]);
+            }, [games, allUserStatuses]);
 
             const handleImportData = useCallback((e) => {
-                const file = e.target.files[0]; if (!file || !db || isQuotaExceeded || isApiDisabled) return;
+                const file = e.target.files[0]; if (!file || !db || isQuotaExceeded) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const data = JSON.parse(ev.target.result);
-                        showNotify("正在清除舊資料並導入...");
                         const gamesSnap = await db.collection(paths.games).get();
                         const gBatch = db.batch();
                         gamesSnap.forEach(doc => gBatch.delete(doc.ref));
@@ -605,30 +569,25 @@
                         const sBatch = db.batch();
                         statusSnap.forEach(doc => sBatch.delete(doc.ref));
                         await sBatch.commit();
-                        if (data.games) {
-                            for (const g of data.games) {
-                                const { id, ...gd } = g;
-                                if (id) await db.collection(paths.games).doc(id).set(gd);
-                            }
-                        }
-                        if (data.statuses) {
-                            for (const s of data.statuses) {
-                                const { id, ...sd } = s;
-                                const docId = id || `${sd.gameId}_${sd.userId}`;
-                                await db.collection(paths.statuses).doc(docId).set(sd);
-                            }
-                        }
-                        if (data.settings) {
-                            if (data.settings.statusLabels) await db.collection(paths.settings).doc('labels').set({ list: data.settings.statusLabels });
-                            if (data.settings.currencies) await db.collection(paths.settings).doc('global').set({ currencies: data.settings.currencies });
-                        }
-                        showNotify("還原完畢");
-                    } catch (err) { showNotify("還原失敗"); }
+                        if (data.games) for (const g of data.games) if (g.id) await db.collection(paths.games).doc(g.id).set(g);
+                        if (data.statuses) for (const s of data.statuses) await db.collection(paths.statuses).doc(s.id || `${s.gameId}_${s.userId}`).set(s);
+                        localStorage.removeItem('steam_cache_data');
+                        window.location.reload();
+                    } catch (err) {}
                 };
                 reader.readAsText(file);
-            }, [db, paths, showNotify, isQuotaExceeded, isApiDisabled]);
+            }, [db, paths, isQuotaExceeded]);
 
-            const statusOptions = useMemo(() => statusLabels.map(l => ({ id: l.id, label: l.label })), [statusLabels]);
+            const handleUpdateRates = useCallback(async (e) => {
+                if (e) e.preventDefault();
+                if (!db || isQuotaExceeded) return;
+                try {
+                    await db.collection(paths.settings).doc('rates').set(exchangeRates);
+                    setIsRatesModalOpen(false); showNotify("匯率已同步");
+                } catch (err) { showNotify("匯率儲存失敗"); }
+            }, [exchangeRates, paths, showNotify, isQuotaExceeded]);
+
+            // 3. 計算屬性 (Memos)
             const tableMemberNames = useMemo(() => {
                 const names = new Set();
                 allUserStatuses.forEach(s => { if(s.userName) names.add(s.userName); });
@@ -685,11 +644,26 @@
                 });
             }, [tableMemberNames, allUserStatuses, nameColorMap, statusLabels]);
 
+            // 5. 生命周期 (Effects)
             useEffect(() => {
                 if (isClient) {
                     setUserName(safeGetStorage('steam_user_name', '用戶_' + Math.floor(Math.random()*1000)));
                     setUserColor(safeGetStorage('steam_user_color', '#22d3ee'));
+                    const cached = safeGetStorage('steam_cache_data', null);
+                    if (cached && (Date.now() - cached.time < 3600000)) {
+                        setGames(cached.games);
+                        setAllUserStatuses(cached.statuses);
+                        setIsLoadingGames(false);
+                        setIsLiveMode(false); 
+                    } else setIsLiveMode(true);
                 }
+            }, []);
+
+            useEffect(() => {
+                if (!isClient || !auth) return;
+                auth.signInAnonymously().catch(() => {});
+                const unsub = auth.onAuthStateChanged(u => setUser(u));
+                return () => unsub();
             }, []);
 
             useEffect(() => {
@@ -698,57 +672,53 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
-            // --- 優化點：數據監聽器不再因 Visibility 斷開，防止全量重刷造成的讀取次數飆升 ---
+            // 實時監聽邏輯
             useEffect(() => {
-                if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
-                
+                if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled || !isLiveMode) return;
                 let activeUnsubscribers = [];
                 const handleError = (err) => {
                     console.error("Firestore Error:", err);
                     if (err.message.includes("Cloud Firestore API has not been used")) setIsApiDisabled(true);
                     else if (err.code === 'resource-exhausted') setIsQuotaExceeded(true);
-                    else if (err.code === 'permission-denied') showNotify("⚠️ 權限不足");
                 };
-
                 const subscribe = () => {
-                    // 遊戲數據精確增量更新
                     activeUnsubscribers.push(db.collection(paths.games).onSnapshot(snap => {
                         setGames(prev => {
-                            let next = [...prev];
-                            let hasChanges = false;
+                            let next = [...prev]; let changed = false;
                             snap.docChanges().forEach(change => {
                                 const data = { id: change.doc.id, ...change.doc.data() };
-                                if (change.type === "added") { if (!next.find(g => g.id === data.id)) { next.push(data); hasChanges = true; } }
+                                if (change.type === "added" && !next.find(g => g.id === data.id)) { next.push(data); changed = true; }
                                 else if (change.type === "modified") {
                                     const i = next.findIndex(g => g.id === data.id);
-                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                                } else if (change.type === "removed") { next = next.filter(g => g.id !== data.id); hasChanges = true; }
+                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; changed = true; }
+                                } else if (change.type === "removed") { next = next.filter(g => g.id !== data.id); changed = true; }
                             });
-                            return hasChanges ? next : prev;
+                            if (changed) safeSetStorage('steam_cache_data', { games: next, statuses: allUserStatuses, time: Date.now() });
+                            return changed ? next : prev;
                         });
                         setIsLoadingGames(false);
                     }, handleError));
 
                     activeUnsubscribers.push(db.collection(paths.statuses).onSnapshot(snap => {
                         setAllUserStatuses(prev => {
-                            let next = [...prev];
-                            let hasChanges = false;
+                            let next = [...prev]; let changed = false;
                             snap.docChanges().forEach(change => {
                                 const data = { id: change.doc.id, ...change.doc.data() };
-                                if (change.type === "added") { if (!next.find(s => s.id === data.id)) { next.push(data); hasChanges = true; } }
+                                if (change.type === "added" && !next.find(s => s.id === data.id)) { next.push(data); changed = true; }
                                 else if (change.type === "modified") { 
                                     const i = next.findIndex(s => s.id === data.id); 
-                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; hasChanges = true; }
-                                } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); hasChanges = true; }
+                                    if (i > -1 && JSON.stringify(next[i]) !== JSON.stringify(data)) { next[i] = data; changed = true; }
+                                } else if (change.type === "removed") { next = next.filter(s => s.id !== data.id); changed = true; }
                             });
-                            return hasChanges ? next : prev;
+                            if (changed) safeSetStorage('steam_cache_data', { games: games, statuses: next, time: Date.now() });
+                            return changed ? next : prev;
                         });
                     }, handleError));
 
                     activeUnsubscribers.push(db.collection(paths.logs).limit(10).onSnapshot(snap => {
                         const logs = []; snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
                         logs.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                        setActivityLogs(logs); setIsLoadingLogs(false);
+                        setActivityLogs(logs);
                     }, handleError));
 
                     activeUnsubscribers.push(db.collection(paths.presence).onSnapshot(snap => {
@@ -757,69 +727,57 @@
                         setOnlineUsers(list);
                     }, handleError));
 
-                    activeUnsubscribers.push(db.collection(paths.settings).doc('labels').onSnapshot(doc => { if (doc.exists && doc.data().list) setStatusLabels(doc.data().list); }, handleError));
-                    activeUnsubscribers.push(db.collection(paths.settings).doc('global').onSnapshot(doc => { if (doc.exists && doc.data().currencies) setCurrencies(doc.data().currencies); }, handleError));
                     activeUnsubscribers.push(db.collection(paths.settings).doc('rates').onSnapshot(doc => { if (doc.exists) setExchangeRates(doc.data()); }, handleError));
                 };
-
                 subscribe();
                 return () => activeUnsubscribers.forEach(unsub => unsub());
-            }, [user, paths, isQuotaExceeded, isApiDisabled]);
+            }, [user, paths, isLiveMode, isQuotaExceeded, isApiDisabled]);
 
-            // 在線心跳：僅在分頁可見時寫入
+            // 1 分鐘心跳包 (僅在視窗可見且連線時)
             useEffect(() => {
                 if (!isClient || !user || !db || isQuotaExceeded || isApiDisabled) return;
                 const updatePresence = () => {
                     if (!isPageVisible || !navigator.onLine) return;
-                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+                    db.collection(paths.presence).doc(user.uid).set({ uid: user.uid, name: userName, color: userColor, lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(()=>{});
                 };
                 updatePresence();
                 const heartbeat = setInterval(updatePresence, 60000); 
                 return () => clearInterval(heartbeat);
             }, [user, userName, userColor, paths, isQuotaExceeded, isApiDisabled, isPageVisible]);
 
-            // --- 圖片貼上監聽 ---
+            // 圖片貼上監聽
             useEffect(() => {
                 if (!isModalOpen) return;
-                const handlePaste = async (event) => {
+                const handlePaste = (event) => {
                     const items = event.clipboardData?.items;
-                    const files = event.clipboardData?.files;
-                    let imageBlob = null;
-                    if (items) { for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf("image") !== -1) { imageBlob = items[i].getAsFile(); break; } } }
-                    if (!imageBlob && files && files.length > 0) { for (let i = 0; i < files.length; i++) { if (files[i].type.indexOf("image") !== -1) { imageBlob = files[i]; break; } } }
-                    if (imageBlob) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const reader = new FileReader();
-                        reader.onload = async (e) => {
-                            try {
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf("image") !== -1) {
+                            event.preventDefault();
+                            const blob = items[i].getAsFile();
+                            const reader = new FileReader();
+                            reader.onload = async (e) => {
                                 const compressed = await compressImage(e.target.result);
                                 setFormData(prev => ({ ...prev, cover: compressed }));
                                 showNotify("封面已貼上");
-                            } catch (err) { showNotify("圖片處理失敗"); }
-                        };
-                        reader.readAsDataURL(imageBlob);
+                            };
+                            reader.readAsDataURL(blob);
+                        }
                     }
                 };
                 document.addEventListener('paste', handlePaste);
                 return () => document.removeEventListener('paste', handlePaste);
             }, [isModalOpen, showNotify]);
 
+            useEffect(() => { if (isClient && window.lucide) window.lucide.createIcons(); }, [games, isModalOpen, expandedGroups, isLoadingGames, isEditLocked, isLiveMode, isApiDisabled, achievementEdit, allMembersStats]);
+
             return (
                 <div className={`min-h-screen p-4 md:p-8 relative text-white pb-12 ${isEditLocked ? 'mode-locked' : 'mode-edit'}`}>
                     {(isQuotaExceeded || isApiDisabled) && (
                         <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-md flex flex-col items-center justify-center text-cyan-400 font-black text-center">
                             <Icon name={isApiDisabled ? "settings" : "alert-triangle"} className={`w-12 h-12 mb-4 animate-pulse ${isApiDisabled ? 'text-blue-500' : 'text-amber-500'}`} />
-                            <p className="text-xl tracking-widest uppercase">
-                                {isApiDisabled ? "Firebase API 尚未啟用" : "Firebase 配額已達上限"}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-2 px-8 leading-relaxed max-w-md">
-                                {isApiDisabled ? "請前往 Google Console 啟用 Firestore API 後重新整理。" : "請等待 24 小時配額重置或檢查專案限制。"}
-                            </p>
-                            {isApiDisabled && (
-                                <a href={`https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=${firebaseConfig.projectId}`} target="_blank" className="mt-6 px-6 py-2 bg-blue-600 rounded text-xs text-white uppercase font-black tracking-widest">前往啟用 API</a>
-                            )}
-                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 border border-white/10 rounded text-xs uppercase font-black tracking-widest">重新連接</button>
+                            <p className="text-xl tracking-widest uppercase">{isApiDisabled ? "Firebase API 尚未啟用" : "Firebase 配額已達上限"}</p>
+                            <p className="text-xs text-slate-500 mt-2 px-8 max-w-md">{isApiDisabled ? "請前往 Google Console 啟用 Firestore API。" : "請等待 24 小時配額重置。"}</p>
+                            <button onClick={() => window.location.reload()} className="mt-6 px-6 py-2 bg-slate-800 border border-white/10 rounded text-xs uppercase font-black">重新連接</button>
                         </div>
                     )}
                     <div className="fixed inset-0 z-[-1] opacity-20 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px]"></div>
@@ -827,24 +785,35 @@
                     <div className="max-w-[1600px] mx-auto">
                         <header className="mb-8 flex items-center gap-6">
                             <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" className="w-20 h-20 drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                            <div>
+                            <div className="flex-grow">
                                 <div className="flex items-center gap-2 mb-1"><div className="w-2 h-2 bg-indigo-400 shadow-[0_0_8px_#818cf8]"></div><span className="text-xs font-black text-indigo-400 tracking-widest uppercase">Steam Matrix Control v5.2</span></div>
                                 <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">STEAM <span className="animate-text-shimmer">遊戲庫統計系統</span></h1>
                             </div>
+                            <div className="flex flex-col items-end gap-2 pr-4">
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isLiveMode ? 'text-green-400' : 'text-amber-500'}`}>{isLiveMode ? '實時連線中' : '快取節能模式'}</span>
+                                    <div className={`w-2 h-2 rounded-full ${isLiveMode ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                                </div>
+                                {!isLiveMode ? (
+                                    <button onClick={() => { setIsLiveMode(true); showNotify("正在建立實時連線..."); }} className="text-[9px] bg-slate-900 border border-white/10 px-3 py-1 rounded text-white font-black hover:bg-slate-800">建立同步</button>
+                                ) : (
+                                    <button onClick={() => { setIsLiveMode(false); showNotify("已斷開實時同步"); }} className="text-[9px] bg-red-950/20 border border-red-500/20 px-3 py-1 rounded text-red-400 font-black hover:bg-red-900/30">斷開連線</button>
+                                )}
+                            </div>
                         </header>
                         <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 mb-8">
-                            <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 p-4 h-[180px] overflow-hidden flex flex-col rounded shadow-inner">
+                            <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 p-4 h-[180px] overflow-hidden flex flex-col rounded">
                                 <div className="flex items-center gap-2 mb-2 border-b border-slate-800 pb-1 font-black text-slate-500 text-xs"><Icon name="database" className="w-4 h-4 text-cyan-500" /> 實時操作日誌</div>
                                 <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-[15px] space-y-1 text-slate-400">
-                                    {isLoadingLogs ? <div className="animate-pulse italic">同步中...</div> : activityLogs.map(log => (
+                                    {!isLiveMode ? <div className="text-amber-500 italic text-[11px]">連線已斷開 (節能模式)</div> : activityLogs.map(log => (
                                         <div key={log.id}>[{formatDate(log.timestamp)}] <span className="font-bold" style={{ color: nameColorMap[log.userName] }}>{log.userName}</span> {log.gameName} <span className="text-[12px] text-slate-700">({log.action})</span></div>
                                     ))}
                                 </div>
                             </div>
                             <div className="lg:col-span-2 bg-slate-900/40 border border-white/5 p-4 h-[180px] flex flex-col gap-3 rounded backdrop-blur-sm">
-                                <div className="flex justify-between items-center text-xs font-black text-slate-500 uppercase"><span>在線成員</span><span className="text-xl font-black text-white">{onlineUsers.length}</span></div>
+                                <div className="flex justify-between items-center text-xs font-black text-slate-500 uppercase"><span>在線成員</span><span className="text-xl font-black text-white">{isLiveMode ? onlineUsers.length : '--'}</span></div>
                                 <div className="bg-black/60 border border-slate-800 p-2 flex-1 overflow-y-auto custom-scrollbar text-[11px] rounded flex flex-wrap gap-2">
-                                    {onlineUsers.map(u => (<span key={u.uid} style={{ color: u.color }} className="font-bold">● {u.name}</span>))}
+                                    {isLiveMode ? onlineUsers.map(u => (<span key={u.uid} style={{ color: u.color }} className="font-bold">● {u.name}</span>)) : <div className="text-slate-700">僅實時模式顯示</div>}
                                 </div>
                                 <div className="flex justify-between items-center pt-1 border-t border-white/5">
                                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsEditingName(true)}>
@@ -858,9 +827,8 @@
                                 <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400"></div>
                                 <div className="flex justify-between items-center mb-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                                     <div className="flex items-center gap-3">
-                                        <span>成員統計</span>
-                                        <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" title="匯率設定" onClick={() => setIsRatesModalOpen(true)} />
-                                        <Icon name="settings" className="w-3.5 h-3.5 hover:text-cyan-400" onClick={() => setIsStatusSettingsOpen(true)} />
+                                        <span>成員統計 {isLiveMode ? '' : '(快取)'}</span>
+                                        <Icon name="banknote" className="w-3.5 h-3.5 hover:text-green-400" onClick={() => setIsRatesModalOpen(true)} />
                                         <Icon name="download" className="w-3.5 h-3.5 hover:text-white" onClick={handleExportData} />
                                         <Icon name="upload" className="w-3.5 h-3.5 hover:text-white" onClick={() => importInputRef.current.click()} />
                                         <input type="file" ref={importInputRef} className="hidden" accept=".json" onChange={handleImportData} />
@@ -872,11 +840,7 @@
                                             {allMembersStats.map(m => (
                                                 <tr key={m.name} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
                                                     <td className="py-1" style={{ color: m.color }}>{m.name}</td>
-                                                    {statusLabels.map(label => (
-                                                        <td key={label.id} style={{ color: label.color }} className={`px-1 cursor-pointer hover:bg-white/5 ${activeFilter?.userName === m.name && activeFilter?.statusId === label.id ? 'filter-active' : 'opacity-70 hover:opacity-100'}`} onClick={() => handleSetFilter(m.name, label.id)}>
-                                                            {label.label} {m.stats[label.id]}
-                                                        </td>
-                                                    ))}
+                                                    {statusLabels.map(label => (<td key={label.id} style={{ color: label.color }} className="px-1 opacity-70">{label.label} {m.stats[label.id]}</td>))}
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -886,11 +850,11 @@
                         </div>
                         <div className="mb-24 shadow-2xl rounded overflow-hidden">
                             <div className="flex items-stretch bg-slate-900 border-x border-t border-slate-700">
-                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0]}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase tracking-widest active:scale-95">+ 新增遊戲</button>
+                                <button onClick={() => { setFormData({...formData, parentId: '', currency: currencies[0]}); setEditingId(null); setIsModalOpen(true); }} className="px-8 py-5 bg-indigo-600 hover:bg-indigo-500 font-black border-l-8 border-cyan-400 transition-all uppercase active:scale-95 tracking-widest">+ 新增遊戲</button>
                                 <div className="flex-grow flex items-center px-6 relative">
                                     <Icon name="search" className="w-6 h-6 text-slate-500 mr-4" />
                                     <div className="flex-grow flex items-center gap-4">
-                                        <input type="text" placeholder="搜尋遊戲名稱..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                        <input type="text" placeholder="搜尋..." className="bg-transparent outline-none uppercase font-black tracking-widest text-base flex-grow" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                                         {activeFilter && (
                                             <div className="flex items-center gap-2 bg-cyan-900/50 border border-cyan-500/50 px-3 py-1 rounded text-xs animate-pulse">
                                                 <span className="font-black text-cyan-400">正在篩選: {activeFilter.userName}</span>
@@ -906,14 +870,9 @@
                             <div className="bg-slate-900/60 border border-slate-700 overflow-x-auto custom-scrollbar">
                                 <table className="w-full text-left border-collapse min-w-[1500px]">
                                     <thead>
-                                        <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase tracking-widest border-b border-slate-700">
+                                        <tr className="bg-slate-950 text-cyan-400 text-xs font-black uppercase border-b border-slate-700">
                                             <th className="px-2 w-12"></th>
-                                            <th className="px-1 py-5 w-20 text-center">
-                                                <div className="flex items-center justify-center gap-1.5">
-                                                    {!isEditLocked && (<Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400 transition-colors" title="重新排列編號並補齊缺失" onClick={() => setShowNormalizeConfirm(true)} />)}
-                                                    <span className="cursor-pointer hover:text-white" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</span>
-                                                </div>
-                                            </th>
+                                            <th className="px-1 py-5 w-20 text-center"><div className="flex items-center justify-center gap-1.5">{!isEditLocked && (<Icon name="refresh-cw" className="w-3.5 h-3.5 text-slate-600 hover:text-cyan-400" onClick={() => setShowNormalizeConfirm(true)} />)}<span className="cursor-pointer hover:text-white" onClick={() => setSortConfig({ key: 'order', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>編號</span></div></th>
                                             <th className="px-4 w-28 text-center text-indigo-400">提起人</th>
                                             <th className="px-4 w-56 text-center">封面</th>
                                             <th className="px-6 text-center">遊戲名稱</th>
@@ -924,7 +883,7 @@
                                         </tr>
                                     </thead>
                                     <tbody className="text-sm">
-                                        {isLoadingGames ? (<tr><td colSpan="9" className="py-24 text-center animate-pulse tracking-[0.3em]">SYNCING...</td></tr>) : hierarchy.roots.map((g, i) => (
+                                        {!isLoadingGames && hierarchy.roots.map((g, i) => (
                                             <React.Fragment key={g.id}>
                                                 <GameRow g={g} index={i} isChild={false} isEditLocked={isEditLocked} draggedId={draggedId} currencies={currencies}
                                                     statusOptions={statusOptions} isExpanded={expandedGroups.has(g.id)} hasChildren={hierarchy.children[g.id]?.length > 0}
@@ -957,17 +916,130 @@
                         </div>
                     </div>
 
-                    {/* 匯率設定 */}
                     {isRatesModalOpen && (
                         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
                             <div className="bg-[#0b0e14] border border-green-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center">
-                                <h3 className="text-xl font-black mb-6 italic text-green-400 uppercase tracking-widest flex items-center justify-center gap-2"><Icon name="banknote" className="w-5 h-5" /> 匯率設定</h3>
+                                <h3 className="text-xl font-black mb-6 italic text-green-400 uppercase flex items-center justify-center gap-2"><Icon name="banknote" className="w-5 h-5" /> 匯率設定</h3>
                                 <div className="space-y-4">
-                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = RMB¥</label><input type="number" step="0.01" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RMB} onChange={e => setExchangeRates({...exchangeRates, HKD_RMB: e.target.value})} /></div>
-                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = РУБ₽</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RUB} onChange={e => setExchangeRates({...exchangeRates, HKD_RUB: e.target.value})} /></div>
-                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold">HK$ = INR₹</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} /></div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold uppercase">HK$ = RMB¥</label><input type="number" step="0.01" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RMB} onChange={e => setExchangeRates({...exchangeRates, HKD_RMB: e.target.value})} /></div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold uppercase">HK$ = РУБ₽</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_RUB} onChange={e => setExchangeRates({...exchangeRates, HKD_RUB: e.target.value})} /></div>
+                                    <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-500 font-bold uppercase">HK$ = INR₹</label><input type="number" step="0.1" className="w-full bg-black border border-slate-800 p-3 rounded text-white outline-none focus:border-green-500 font-black text-center" value={exchangeRates.HKD_INR} onChange={e => setExchangeRates({...exchangeRates, HKD_INR: e.target.value})} /></div>
                                 </div>
                                 <div className="flex gap-4 mt-8"><button onClick={() => setIsRatesModalOpen(false)} className="flex-1 py-3 bg-slate-900 font-black rounded uppercase text-sm">取消</button><button onClick={handleUpdateRates} className="flex-1 py-3 bg-green-600 text-black font-black rounded shadow-lg uppercase text-sm">儲存同步</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
+                            <div className="bg-[#0b0e14] border border-white/5 w-full max-w-xl overflow-hidden relative shadow-2xl rounded-sm">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-indigo-600"></div>
+                                <button onClick={closeModal} className="absolute right-4 top-4 text-slate-600 hover:text-white transition-all z-10"><Icon name="x" className="w-5 h-5" /></button>
+                                <div className="p-6 md:p-8">
+                                    <div className="mb-6 -ml-2 flex items-baseline gap-4"><h3 className="text-2xl font-black italic tracking-tighter underline decoration-cyan-400/30 decoration-4"><span>{editingId ? '修改' : '錄入'}</span></h3></div>
+                                    <form onSubmit={handleSaveGame} className="space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                                            <div className="md:col-span-4 flex flex-col items-center">
+                                                <div onClick={() => fileInputRef.current.click()} className="w-full max-w-[120px] aspect-[3/4.2] bg-black border border-slate-800 rounded flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group hover:border-cyan-400 transition-all">
+                                                    {formData.cover ? <img src={formData.cover} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-2 text-slate-700 group-hover:text-cyan-500"><Icon name="camera" className="w-6 h-6" /><span className="text-[9px] font-black uppercase text-center px-2">貼上封面<br/>(CTRL+V)</span></div>}
+                                                </div>
+                                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={async (e)=>{ if(e.target.files[0]) { const c = await compressImage(URL.createObjectURL(e.target.files[0])); setFormData(p=>({...p, cover: c})); } }} />
+                                            </div>
+                                            <div className="md:col-span-8 space-y-3">
+                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400">提起人</label><select className="modal-input-base w-full font-black text-white text-sm" value={formData.addedBy} onChange={e=>setFormData({...formData, addedBy: e.target.value})}><option value="">選擇人員...</option>{tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                                <div className="modal-field-container items-start"><label className="text-[12px] font-black text-indigo-400 mt-2.5">遊戲名稱</label><textarea required rows="2" placeholder="名稱..." className="modal-input-base w-full text-lg font-black resize-none" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} /></div>
+                                                <div className="modal-field-container"><label className="text-[12px] font-black text-indigo-400">價格設定</label><div className="flex w-fit items-stretch rounded bg-black/40 border-b-2 border-slate-800"><select className="bg-transparent font-black text-indigo-400 outline-none p-2 text-sm appearance-none" value={formData.currency} onChange={e=>setFormData({...formData, currency: e.target.value})}>{currencies.map(c => <option key={c} value={c} className="bg-[#0b0e14]">{c}</option>)}</select><input type="number" placeholder="0" className="bg-transparent p-2 text-xl font-black outline-none text-white w-28" value={formData.price === '0' || formData.price === 0 ? '' : formData.price} onChange={e=>setFormData({...formData, price: e.target.value})} /></div></div>
+                                            </div>
+                                        </div>
+                                        <div className="pt-4 flex gap-4"><button type="button" onClick={closeModal} className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase">放棄</button><button type="submit" className="flex-[2] py-3 bg-cyan-600 text-black text-[12px] font-black rounded shadow-lg uppercase">確認</button></div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showNormalizeConfirm && (
+                        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xs p-6 rounded shadow-2xl text-center">
+                                <h4 className="text-cyan-400 font-black mb-2 uppercase tracking-widest">編號重新校正</h4>
+                                <p className="text-xs text-slate-400 mb-6 font-bold leading-relaxed px-2">確定校正所有遊戲編號嗎？</p>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setShowNormalizeConfirm(false)} className="flex-1 py-2 bg-slate-900 text-[11px] font-black rounded border border-white/5 uppercase">取消</button>
+                                    <button onClick={handleNormalizeOrders} className="flex-1 py-2 bg-cyan-600 text-black text-[11px] font-black rounded shadow-lg uppercase">執行</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {achievementEdit.gameId && (
+                        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })}>
+                            <div className="bg-[#0b0e14] border border-amber-500/30 w-full max-w-sm p-8 rounded shadow-2xl relative text-center" onClick={(e) => e.stopPropagation()}>
+                                <div className="absolute top-0 left-0 w-full h-1 bg-amber-500"></div>
+                                <h3 className="text-xl font-black mb-1 text-amber-400 italic underline decoration-amber-500/30 decoration-4">成就數據同步</h3>
+                                <p className="text-[10px] text-slate-500 mb-6 font-bold truncate opacity-60 uppercase">{achievementEdit.name} - [{achievementEdit.memberName}]</p>
+                                <div className="grid grid-cols-2 gap-4 mb-8 text-center">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">完成數</label>
+                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-cyan-400 font-black text-2xl outline-none focus:border-cyan-500/50 transition-all text-center"
+                                            value={achievementEdit.completed === '0' || achievementEdit.completed === 0 ? '' : achievementEdit.completed}
+                                            onChange={e => setAchievementEdit({...achievementEdit, completed: e.target.value})} />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">總成就數</label>
+                                        <input type="number" placeholder="0" className="w-full bg-black/60 border border-slate-800 p-3 rounded text-white font-black text-2xl outline-none focus:border-slate-600 transition-all text-center"
+                                            value={achievementEdit.total === '0' || achievementEdit.total === 0 ? '' : achievementEdit.total}
+                                            onChange={e => setAchievementEdit({...achievementEdit, total: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setAchievementEdit({ gameId: null, userId: null, completed: '', total: '', name: '', memberName: '' })} className="flex-1 py-3 bg-slate-900 text-[12px] font-black rounded border border-white/5 uppercase">放棄</button>
+                                    <button onClick={handleUpdateAchievements} className="flex-1 py-3 bg-amber-600 text-black text-[12px] font-black rounded shadow-lg active:scale-95 uppercase">確認修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isStatusSettingsOpen && (
+                        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                            <div className="bg-[#0b0e14] border border-cyan-500/30 w-full max-w-xl p-8 rounded shadow-2xl">
+                                <h3 className="text-2xl font-black mb-6 italic text-cyan-400 uppercase tracking-widest">狀態分組與顏色設定</h3>
+                                <div className="space-y-4 max-h-[450px] overflow-y-auto custom-scrollbar pr-2 mb-6">
+                                    {statusLabels.map((item, index) => (
+                                        <div key={item.id} className="flex items-center gap-3 bg-black/40 p-3 rounded border border-white/5 group">
+                                            <div className="flex flex-col items-center gap-1 shrink-0">
+                                                <div className="text-[9px] font-black text-slate-600 uppercase">顏色</div>
+                                                <input type="color" className="w-10 h-10 bg-transparent cursor-pointer rounded" value={item.color}
+                                                    onChange={e => { const newList = [...statusLabels]; newList[index].color = e.target.value; setStatusLabels(newList); }} />
+                                            </div>
+                                            <div className="flex-grow flex flex-col gap-1">
+                                                <div className="text-[9px] font-black text-slate-600 uppercase">標籤名稱</div>
+                                                <input className="w-full bg-black border border-slate-800 p-2 rounded text-white outline-none focus:border-cyan-400 font-bold" style={{ color: item.color }} value={item.label}
+                                                    onChange={e => { const newList = [...statusLabels]; newList[index].label = e.target.value; setStatusLabels(newList); }} />
+                                            </div>
+                                            <button onClick={() => { if(statusLabels.length > 1) setStatusLabels(statusLabels.filter(l => l.id !== item.id)); }} className="text-slate-600 hover:text-red-500 transition-colors pt-4"><Icon name="trash-2" className="w-6 h-6" /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={() => setStatusLabels([...statusLabels, { id: `status_${Date.now()}`, label: '新分組', color: '#ffffff' }])} className="w-full py-4 mb-8 border border-dashed border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/5 font-black rounded transition-all uppercase">+ 新增狀態分組</button>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setIsStatusSettingsOpen(false)} className="flex-1 py-4 bg-slate-900 font-black rounded uppercase">取消</button>
+                                    <button onClick={handleUpdateLabels} className="flex-1 py-4 bg-cyan-600 text-black font-black rounded uppercase">儲存同步</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {newPersonnelInput.gameId && (
+                        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-slate-900 border border-indigo-500 p-6 rounded shadow-2xl w-80">
+                                <h4 className="text-indigo-400 font-black mb-4 uppercase tracking-widest">添加遊戲人員</h4>
+                                <select autoFocus className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none font-black" value={newPersonnelInput.name} onChange={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})}><option value="">- 請選擇人員 -</option>{tableMemberNames.map(m => <option key={m} value={m}>{m}</option>)}<option value="_manual_">- 手動輸入 -</option></select>
+                                {newPersonnelInput.name === "_manual_" && <input className="w-full bg-black border border-slate-700 p-3 rounded mb-4 text-white outline-none focus:border-cyan-400" placeholder="輸入名稱..." autoFocus onBlur={e => setNewPersonnelInput({...newPersonnelInput, name: e.target.value})} />}
+                                <div className="flex gap-2"><button onClick={() => setNewPersonnelInput({gameId: null, name: ''})} className="flex-1 py-2 bg-slate-800 text-xs font-black rounded uppercase">取消</button><button onClick={async () => {
+                                    const n = newPersonnelInput.name.trim(); if(!n || n === "_manual_") return;
+                                    await handleStatusUpdate(newPersonnelInput.gameId, `user_${Date.now()}`, { userName: n, status: 'unbought', purchasePrice: '0', purchaseCurrency: 'HK$', achTotal: 0, achCompleted: 0 });
+                                    setNewPersonnelInput({ gameId: null, name: '' });
+                                }} className="flex-1 py-2 bg-indigo-600 text-xs font-black rounded uppercase">確認</button></div>
                             </div>
                         </div>
                     )}
